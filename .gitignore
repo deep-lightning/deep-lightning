@@ -1,0 +1,13 @@
+# Python
+__pycache__
+
+# Environment
+venv
+
+# Lightning logs
+lightning_logs
+
+# Dataset folders
+train
+test
+val
