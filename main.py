@@ -3,7 +3,7 @@ import pytorch_lightning as pl
 
 from torch import nn
 from torch.optim import Adam
-from torchmetrics import SSIM, MeanSquaredError
+from torchmetrics import MetricCollection, SSIM, MeanSquaredError
 
 from model import D, G, weights_init
 
@@ -20,15 +20,16 @@ from argparse import ArgumentParser
 class CGan(pl.LightningModule):
     def __init__(
         self,
-        n_channel_input,
-        n_channel_output,
-        n_generator_filters,
-        n_discriminator_filters,
-        lr,
-        beta1,
-        lambda_factor,
-    ):
+        n_channel_input: int = 3,
+        n_channel_output: int = 3,
+        n_generator_filters: int = 64,
+        n_discriminator_filters: int = 64,
+        lr: float = 0.0002,
+        beta1: float = 0.5,
+        lambda_factor: int = 100,
+    ) -> None:
         super().__init__()
+        self.save_hyperparameters()
 
         self.generator = G(n_channel_input * 4, n_channel_output, n_generator_filters)
         self.generator.apply(weights_init)
@@ -41,8 +42,10 @@ class CGan(pl.LightningModule):
         self.l1_loss = nn.L1Loss()
         self.gan_loss = nn.BCELoss()
 
-        self.ssim = SSIM()
-        self.mse = MeanSquaredError()
+        metrics = MetricCollection({"ssim": SSIM(), "mse": MeanSquaredError()})
+        self.train_metrics = metrics.clone(prefix="train_")
+        self.val_metrics = metrics.clone(prefix="val_")
+        self.test_metrics = metrics.clone(prefix="test_")
 
         self.lr = lr
         self.beta1 = beta1
@@ -55,20 +58,21 @@ class CGan(pl.LightningModule):
     def generator_loss(self, albedo, direct, normal, depth, gt):
 
         z = torch.cat((albedo, direct, normal, depth), 1)
-        fake = self(z)
+        fake = self.generator(z)
 
         prediction = self.discriminator(torch.cat((z, fake), 1))
         y = torch.ones(prediction.size(), device=self.device)
 
         gan_loss = self.gan_loss(prediction, y)
         l1_loss = self.l1_loss(fake, gt)
+        self.train_metrics(fake, gt)
 
         return gan_loss + self.lambda_factor * l1_loss
 
     def discriminator_loss(self, albedo, direct, normal, depth, gt):
 
         z = torch.cat((albedo, direct, normal, depth), 1)
-        fake = self(z)
+        fake = self.generator(z)
 
         # train on real data
         real_data = torch.cat((z, gt), 1)
@@ -96,31 +100,52 @@ class CGan(pl.LightningModule):
         result = None
         if optimizer_idx == 0:
             result = self.generator_loss(albedo, direct, normal, depth, gt)
-            self.log("g_loss", result, on_epoch=True, prog_bar=True)
+            self.log("g_loss", result, on_epoch=True)
 
         # train discriminator
         if optimizer_idx == 1:
             result = self.discriminator_loss(albedo, direct, normal, depth, gt)
-            self.log("d_loss", result, on_epoch=True, prog_bar=True)
+            self.log("d_loss", result, on_epoch=True)
 
         return result
+
+    def training_epoch_end(self, outputs) -> None:
+        self.log_dict(self.train_metrics.compute(), prog_bar=True)
+        self.train_metrics.reset()
 
     def validation_step(self, batch, batch_idx):
         albedo, direct, normal, depth, gt = batch
 
         z = torch.cat((albedo, direct, normal, depth), 1)
-        fake = self(z)
+        fake = self.generator(z)
 
         if batch_idx == 0:
             logger = self.logger.experiment
-            logger.add_images("fake", fake)
-            logger.add_images("real", gt)
+            logger.add_images("val_fake", fake, self.current_epoch)
+            logger.add_images("val_real", gt, self.current_epoch)
 
-        ssim_score = self.ssim(fake, gt)
-        self.log("ssim", ssim_score, on_epoch=True, prog_bar=True)
+        self.val_metrics(fake, gt)
 
-        mse_score = self.mse(fake, gt)
-        self.log("mse", mse_score, on_epoch=True, prog_bar=True)
+    def validation_epoch_end(self, outputs) -> None:
+        self.log_dict(self.val_metrics.compute(), prog_bar=True)
+        self.val_metrics.reset()
+
+    def test_step(self, batch, batch_idx):
+        albedo, direct, normal, depth, gt = batch
+
+        z = torch.cat((albedo, direct, normal, depth), 1)
+        fake = self.generator(z)
+
+        if batch_idx == 0:
+            logger = self.logger.experiment
+            logger.add_images("test_fake", fake, self.current_epoch)
+            logger.add_images("test_real", gt, self.current_epoch)
+
+        self.test_metrics(fake, gt)
+
+    def test_epoch_end(self, outputs) -> None:
+        self.log_dict(self.test_metrics.compute(), prog_bar=True)
+        self.test_metrics.reset()
 
     def configure_optimizers(self):
         opt_d = Adam(
@@ -134,10 +159,11 @@ def main(hparams):
     pl.seed_everything(42, workers=True)
 
     callbacks = [
-        EarlyStopping(monitor="ssim"),
+        EarlyStopping(monitor="val_mse", mode="min"),
+        EarlyStopping(monitor="val_ssim", mode="max"),
         ModelCheckpoint(
-            monitor="ssim",
-            filename="cgan-{epoch:02d}-{ssim:.2f}-{mse:.2f}",
+            monitor="val_ssim",
+            filename="cgan-{epoch:02d}-{val_ssim:.2f}-{val_mse:.2f}",
             save_top_k=3,
         ),
     ]
@@ -152,45 +178,48 @@ def main(hparams):
         lambda_factor=hparams.lambda_factor,
     )
 
-    trainer = pl.Trainer(gpus=hparams.gpus, callbacks=callbacks, deterministic=True)
+    trainer = pl.Trainer(
+        gpus=hparams.gpus,
+        callbacks=callbacks,
+        deterministic=True,
+    )
 
-    if hparams.test:
-        test_dir = join(hparams.dataset, "test")
-        test_dataset = DataLoaderHelper(test_dir)
-        test_loader = DataLoader(
-            dataset=test_dataset,
-            num_workers=hparams.workers,
-            batch_size=hparams.test_batch_size,
-            shuffle=False,
-        )
+    train_dir = join(hparams.dataset, "train")
+    train_dataset = DataLoaderHelper(train_dir)
+    train_loader = DataLoader(
+        dataset=train_dataset,
+        num_workers=hparams.workers,
+        batch_size=hparams.train_batch_size,
+        shuffle=True,
+    )
 
-        trainer.test(model, test_dataloaders=test_loader)
-    else:
-        train_dir = join(hparams.dataset, "train")
-        train_dataset = DataLoaderHelper(train_dir)
-        train_loader = DataLoader(
-            dataset=train_dataset,
-            num_workers=hparams.workers,
-            batch_size=hparams.train_batch_size,
-            shuffle=True,
-        )
+    val_dir = join(hparams.dataset, "val")
+    val_dataset = DataLoaderHelper(val_dir)
+    val_loader = DataLoader(
+        dataset=val_dataset,
+        num_workers=hparams.workers,
+        batch_size=hparams.val_batch_size,
+        shuffle=False,
+    )
 
-        val_dir = join(hparams.dataset, "val")
-        val_dataset = DataLoaderHelper(val_dir)
-        val_loader = DataLoader(
-            dataset=val_dataset,
-            num_workers=hparams.workers,
-            batch_size=hparams.val_batch_size,
-            shuffle=False,
-        )
+    trainer.fit(model, train_dataloader=train_loader, val_dataloaders=val_loader)
 
-        trainer.fit(model, train_dataloader=train_loader, val_dataloaders=val_loader)
+    test_dir = join(hparams.dataset, "test")
+    test_dataset = DataLoaderHelper(test_dir)
+    test_loader = DataLoader(
+        dataset=test_dataset,
+        num_workers=hparams.workers,
+        batch_size=hparams.test_batch_size,
+        shuffle=False,
+    )
+
+    trainer.test(model, test_dataloaders=test_loader)
 
 
 if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("--test", default=False)
-    parser.add_argument("--gpus", default=None)
+    parser.add_argument("--gpus", type=int, default=0)
 
     parser.add_argument(
         "--dataset", required=True, help="location of train, val and test folders"
