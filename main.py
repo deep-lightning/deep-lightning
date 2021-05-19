@@ -5,6 +5,8 @@ from torch import nn
 from torch.optim import Adam
 from torchmetrics import MetricCollection, SSIM, MeanSquaredError
 
+from torchmetrics.functional.regression import ssim, mean_squared_error
+
 from model import D, G, weights_init
 
 from dataset import DataLoaderHelper
@@ -42,14 +44,23 @@ class CGan(pl.LightningModule):
         self.l1_loss = nn.L1Loss()
         self.gan_loss = nn.BCELoss()
 
-        metrics = MetricCollection({"ssim": SSIM(), "mse": MeanSquaredError()})
-        self.train_metrics = metrics.clone(prefix="train_")
-        self.val_metrics = metrics.clone(prefix="val_")
-        self.test_metrics = metrics.clone(prefix="test_")
+        # metrics = MetricCollection({"mse": MeanSquaredError()})
+        # self.train_metrics = metrics.clone(prefix="train_")
+        # self.val_metrics = metrics.clone(prefix="val_")
+        # self.test_metrics = metrics.clone(prefix="test_")
 
         self.lr = lr
         self.beta1 = beta1
         self.lambda_factor = lambda_factor
+
+        self.train_ssim = []
+        self.train_mse = []
+
+        self.val_ssim = []
+        self.val_mse = []
+
+        self.test_ssim = []
+        self.test_mse = []
 
     def forward(self, x):
         # in lightning, forward defines the prediction/inference actions
@@ -65,7 +76,9 @@ class CGan(pl.LightningModule):
 
         gan_loss = self.gan_loss(prediction, y)
         l1_loss = self.l1_loss(fake, gt)
-        self.train_metrics(fake, gt)
+        # self.train_metrics(fake, gt)
+        self.train_ssim.append(ssim(fake, gt))
+        self.train_mse.append(mean_squared_error(fake, gt))
 
         return gan_loss + self.lambda_factor * l1_loss
 
@@ -110,8 +123,12 @@ class CGan(pl.LightningModule):
         return result
 
     def training_epoch_end(self, outputs) -> None:
-        self.log_dict(self.train_metrics.compute(), prog_bar=True)
-        self.train_metrics.reset()
+        # self.log_dict(self.train_metrics.compute(), prog_bar=True)
+        # self.train_metrics.reset()
+        self.log("train_ssim", torch.stack(self.train_ssim).mean(), prog_bar=True)
+        self.log("train_mse", torch.stack(self.train_mse).mean(), prog_bar=True)
+        self.train_mse = []
+        self.train_ssim = []
 
     def validation_step(self, batch, batch_idx):
         albedo, direct, normal, depth, gt = batch
@@ -124,11 +141,18 @@ class CGan(pl.LightningModule):
             logger.add_images("val_fake", fake, self.current_epoch)
             logger.add_images("val_real", gt, self.current_epoch)
 
-        self.val_metrics(fake, gt)
+        # self.val_metrics(fake, gt)
+
+        self.val_ssim.append(ssim(fake, gt))
+        self.val_mse.append(mean_squared_error(fake, gt))
 
     def validation_epoch_end(self, outputs) -> None:
-        self.log_dict(self.val_metrics.compute(), prog_bar=True)
-        self.val_metrics.reset()
+        # self.log_dict(self.val_metrics.compute(), prog_bar=True)
+        # self.val_metrics.reset()
+        self.log("val_ssim", torch.stack(self.val_ssim).mean(), prog_bar=True)
+        self.log("val_mse", torch.stack(self.val_mse).mean(), prog_bar=True)
+        self.val_mse = []
+        self.val_ssim = []
 
     def test_step(self, batch, batch_idx):
         albedo, direct, normal, depth, gt = batch
@@ -141,11 +165,18 @@ class CGan(pl.LightningModule):
             logger.add_images("test_fake", fake, self.current_epoch)
             logger.add_images("test_real", gt, self.current_epoch)
 
-        self.test_metrics(fake, gt)
+        # self.test_metrics(fake, gt)
+
+        self.test_ssim.append(ssim(fake, gt))
+        self.test_mse.append(mean_squared_error(fake, gt))
 
     def test_epoch_end(self, outputs) -> None:
-        self.log_dict(self.test_metrics.compute(), prog_bar=True)
-        self.test_metrics.reset()
+        # self.log_dict(self.test_metrics.compute(), prog_bar=True)
+        # self.test_metrics.reset()
+        self.log("test_ssim", torch.stack(self.test_ssim).mean(), prog_bar=True)
+        self.log("test_mse", torch.stack(self.test_mse).mean(), prog_bar=True)
+        self.test_mse = []
+        self.test_ssim = []
 
     def configure_optimizers(self):
         opt_d = Adam(
