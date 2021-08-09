@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-from torch.nn.modules.channelshuffle import ChannelShuffle
 
 
 def weights_init(m):
