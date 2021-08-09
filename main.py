@@ -16,28 +16,25 @@ from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 
 from os.path import join
-from argparse import ArgumentParser
+from argparse import ArgumentParser, Namespace
 
 
 class CGan(pl.LightningModule):
-    def __init__(
-        self,
-        n_channel_input: int = 3,
-        n_channel_output: int = 3,
-        n_generator_filters: int = 64,
-        n_discriminator_filters: int = 64,
-        lr: float = 0.0002,
-        beta1: float = 0.5,
-        lambda_factor: int = 100,
-    ) -> None:
+    def __init__(self, hparams: Namespace) -> None:
         super().__init__()
         self.save_hyperparameters()
 
-        self.generator = G(n_channel_input * 4, n_channel_output, n_generator_filters)
+        self.generator = G(
+            hparams.n_channel_input * 4,
+            hparams.n_channel_output,
+            hparams.n_generator_filters,
+        )
         self.generator.apply(weights_init)
 
         self.discriminator = D(
-            n_channel_input * 4, n_channel_output, n_discriminator_filters
+            hparams.n_channel_input * 4,
+            hparams.n_channel_output,
+            hparams.n_discriminator_filters,
         )
         self.discriminator.apply(weights_init)
 
@@ -49,22 +46,55 @@ class CGan(pl.LightningModule):
         # self.val_metrics = metrics.clone(prefix="val_")
         # self.test_metrics = metrics.clone(prefix="test_")
 
-        self.lr = lr
-        self.beta1 = beta1
-        self.lambda_factor = lambda_factor
+        self.lr = hparams.lr
+        self.beta1 = hparams.beta1
+        self.lambda_factor = hparams.lambda_factor
+        self.dataset = hparams.dataset
+        self.batch_size = hparams.batch_size
+        self.workers = hparams.workers
 
-        self.train_ssim = []
+        # self.train_ssim = []
         self.train_mse = []
 
-        self.val_ssim = []
+        # self.val_ssim = []
         self.val_mse = []
 
-        self.test_ssim = []
+        # self.test_ssim = []
         self.test_mse = []
 
     def forward(self, x):
         # in lightning, forward defines the prediction/inference actions
         return self.generator(x)
+
+    def train_dataloader(self):
+        train_dir = join(self.dataset, "train")
+        train_dataset = DataLoaderHelper(train_dir)
+        return DataLoader(
+            dataset=train_dataset,
+            num_workers=self.workers,
+            batch_size=self.batch_size,
+            shuffle=True,
+        )
+
+    def val_dataloader(self):
+        val_dir = join(self.dataset, "val")
+        val_dataset = DataLoaderHelper(val_dir)
+        return DataLoader(
+            dataset=val_dataset,
+            num_workers=self.workers,
+            batch_size=self.batch_size,
+            shuffle=False,
+        )
+
+    def test_dataloader(self):
+        test_dir = join(self.dataset, "test")
+        test_dataset = DataLoaderHelper(test_dir)
+        return DataLoader(
+            dataset=test_dataset,
+            num_workers=self.workers,
+            batch_size=self.batch_size,
+            shuffle=False,
+        )
 
     def generator_loss(self, albedo, direct, normal, depth, gt):
 
@@ -77,7 +107,7 @@ class CGan(pl.LightningModule):
         gan_loss = self.gan_loss(prediction, y)
         l1_loss = self.l1_loss(fake, gt)
         # self.train_metrics(fake, gt)
-        self.train_ssim.append(ssim(fake, gt))
+        # self.train_ssim.append(ssim(fake, gt))
         self.train_mse.append(mean_squared_error(fake, gt))
 
         return gan_loss + self.lambda_factor * l1_loss
@@ -107,17 +137,15 @@ class CGan(pl.LightningModule):
         return real_loss + fake_loss
 
     def training_step(self, batch, batch_idx, optimizer_idx):
-        albedo, direct, normal, depth, gt = batch
-
         # train generator
         result = None
         if optimizer_idx == 0:
-            result = self.generator_loss(albedo, direct, normal, depth, gt)
+            result = self.generator_loss(*batch)
             self.log("g_loss", result, on_epoch=True)
 
         # train discriminator
         if optimizer_idx == 1:
-            result = self.discriminator_loss(albedo, direct, normal, depth, gt)
+            result = self.discriminator_loss(*batch)
             self.log("d_loss", result, on_epoch=True)
 
         return result
@@ -125,10 +153,10 @@ class CGan(pl.LightningModule):
     def training_epoch_end(self, outputs) -> None:
         # self.log_dict(self.train_metrics.compute(), prog_bar=True)
         # self.train_metrics.reset()
-        self.log("train_ssim", torch.stack(self.train_ssim).mean(), prog_bar=True)
+        # self.log("train_ssim", torch.stack(self.train_ssim).mean(), prog_bar=True)
         self.log("train_mse", torch.stack(self.train_mse).mean(), prog_bar=True)
         self.train_mse = []
-        self.train_ssim = []
+        # self.train_ssim = []
 
     def validation_step(self, batch, batch_idx):
         albedo, direct, normal, depth, gt = batch
@@ -143,16 +171,16 @@ class CGan(pl.LightningModule):
 
         # self.val_metrics(fake, gt)
 
-        self.val_ssim.append(ssim(fake, gt))
+        # self.val_ssim.append(ssim(fake, gt))
         self.val_mse.append(mean_squared_error(fake, gt))
 
     def validation_epoch_end(self, outputs) -> None:
         # self.log_dict(self.val_metrics.compute(), prog_bar=True)
         # self.val_metrics.reset()
-        self.log("val_ssim", torch.stack(self.val_ssim).mean(), prog_bar=True)
+        # self.log("val_ssim", torch.stack(self.val_ssim).mean(), prog_bar=True)
         self.log("val_mse", torch.stack(self.val_mse).mean(), prog_bar=True)
         self.val_mse = []
-        self.val_ssim = []
+        # self.val_ssim = []
 
     def test_step(self, batch, batch_idx):
         albedo, direct, normal, depth, gt = batch
@@ -167,16 +195,16 @@ class CGan(pl.LightningModule):
 
         # self.test_metrics(fake, gt)
 
-        self.test_ssim.append(ssim(fake, gt))
+        # self.test_ssim.append(ssim(fake, gt))
         self.test_mse.append(mean_squared_error(fake, gt))
 
     def test_epoch_end(self, outputs) -> None:
         # self.log_dict(self.test_metrics.compute(), prog_bar=True)
         # self.test_metrics.reset()
-        self.log("test_ssim", torch.stack(self.test_ssim).mean(), prog_bar=True)
+        # self.log("test_ssim", torch.stack(self.test_ssim).mean(), prog_bar=True)
         self.log("test_mse", torch.stack(self.test_mse).mean(), prog_bar=True)
         self.test_mse = []
-        self.test_ssim = []
+        # self.test_ssim = []
 
     def configure_optimizers(self):
         opt_d = Adam(
@@ -190,61 +218,60 @@ def main(hparams):
     pl.seed_everything(42, workers=True)
 
     callbacks = [
-        EarlyStopping(monitor="val_mse", mode="min"),
-        EarlyStopping(monitor="val_ssim", mode="max"),
+        EarlyStopping(monitor="val_mse", mode="min", patience=3),
+        # EarlyStopping(monitor="val_ssim", mode="max"),
         ModelCheckpoint(
-            monitor="val_ssim",
-            filename="cgan-{epoch:02d}-{val_ssim:.2f}-{val_mse:.2f}",
+            monitor="val_mse",
+            filename="cgan-{epoch:02d}-{val_mse:.2f}",
             save_top_k=3,
         ),
     ]
 
-    model = CGan(
-        n_channel_input=hparams.n_channel_input,
-        n_channel_output=hparams.n_channel_output,
-        n_generator_filters=hparams.n_generator_filters,
-        n_discriminator_filters=hparams.n_discriminator_filters,
-        lr=hparams.lr,
-        beta1=hparams.beta1,
-        lambda_factor=hparams.lambda_factor,
-    )
+    model = CGan(hparams)
+    # print(model)
 
     trainer = pl.Trainer(
         gpus=hparams.gpus,
         callbacks=callbacks,
         deterministic=True,
+        # auto_lr_find=True
+        # auto_scale_batch_size="power",
     )
 
-    train_dir = join(hparams.dataset, "train")
-    train_dataset = DataLoaderHelper(train_dir)
-    train_loader = DataLoader(
-        dataset=train_dataset,
-        num_workers=hparams.workers,
-        batch_size=hparams.train_batch_size,
-        shuffle=True,
-    )
+    # train_dir = join(hparams.dataset, "train")
+    # train_dataset = DataLoaderHelper(train_dir)
+    # train_loader = DataLoader(
+    #     dataset=train_dataset,
+    #     num_workers=hparams.workers,
+    #     batch_size=hparams.train_batch_size,
+    #     shuffle=True,
+    # )
 
-    val_dir = join(hparams.dataset, "val")
-    val_dataset = DataLoaderHelper(val_dir)
-    val_loader = DataLoader(
-        dataset=val_dataset,
-        num_workers=hparams.workers,
-        batch_size=hparams.val_batch_size,
-        shuffle=False,
-    )
+    # val_dir = join(hparams.dataset, "val")
+    # val_dataset = DataLoaderHelper(val_dir)
+    # val_loader = DataLoader(
+    #     dataset=val_dataset,
+    #     num_workers=hparams.workers,
+    #     batch_size=hparams.val_batch_size,
+    #     shuffle=False,
+    # )
 
-    trainer.fit(model, train_dataloader=train_loader, val_dataloaders=val_loader)
+    # trainer.tune(model, train_dataloaders=[train_loader], val_dataloaders=[val_loader])
 
-    test_dir = join(hparams.dataset, "test")
-    test_dataset = DataLoaderHelper(test_dir)
-    test_loader = DataLoader(
-        dataset=test_dataset,
-        num_workers=hparams.workers,
-        batch_size=hparams.test_batch_size,
-        shuffle=False,
-    )
+    # trainer.tune(model)
 
-    trainer.test(model, test_dataloaders=test_loader)
+    trainer.fit(model)
+
+    # test_dir = join(hparams.dataset, "test")
+    # test_dataset = DataLoaderHelper(test_dir)
+    # test_loader = DataLoader(
+    #     dataset=test_dataset,
+    #     num_workers=hparams.workers,
+    #     batch_size=hparams.test_batch_size,
+    #     shuffle=False,
+    # )
+
+    trainer.test(model)
 
 
 if __name__ == "__main__":
@@ -255,15 +282,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--dataset", required=True, help="location of train, val and test folders"
     )
-    parser.add_argument(
-        "--train_batch_size", type=int, default=4, help="batch size for training"
-    )
-    parser.add_argument(
-        "--val_batch_size", type=int, default=4, help="batch size for validating"
-    )
-    parser.add_argument(
-        "--test_batch_size", type=int, default=4, help="batch size for testing"
-    )
+    parser.add_argument("--batch_size", type=int, default=4, help="batch size")
     parser.add_argument(
         "--n_channel_input", type=int, default=3, help="number of input channels"
     )
