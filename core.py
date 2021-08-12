@@ -44,6 +44,7 @@ class CGan(pl.LightningModule):
         # hparams
         self.lr = hparams.lr
         self.beta1 = hparams.beta1
+        self.beta2 = hparams.beta2
         self.lambda_factor = hparams.lambda_factor
 
     def forward(self, x):
@@ -140,9 +141,9 @@ class CGan(pl.LightningModule):
 
     def configure_optimizers(self):
         opt_d = Adam(
-            self.discriminator.parameters(), lr=self.lr, betas=(self.beta1, 0.999)
+            self.discriminator.parameters(), lr=self.lr, betas=(self.beta1, self.beta2)
         )
-        opt_g = Adam(self.generator.parameters(), lr=self.lr, betas=(self.beta1, 0.999))
+        opt_g = Adam(self.generator.parameters(), lr=self.lr, betas=(self.beta1, self.beta2))
         return [opt_g, opt_d]
 
     def get_progress_bar_dict(self):

@@ -66,6 +66,7 @@ if __name__ == "__main__":
     )
     parser.add_argument("--lr", type=float, default=0.0002, help="learning rate")
     parser.add_argument("--beta1", type=float, default=0.5, help="beta1")
+    parser.add_argument("--beta2", type=float, default=0.999, help="beta2")
     parser.add_argument(
         "--lambda_factor", type=int, default=100, help="L1 regularization factor"
     )
