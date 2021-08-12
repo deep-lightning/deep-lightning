@@ -126,14 +126,78 @@ class G(nn.Module):
         self.conv7 = nn.Conv2d(n_filters * 8, n_filters * 8, 4, 2, 1)
         self.conv8 = nn.Conv2d(n_filters * 8, n_filters * 8, 4, 2, 1)
 
-        self.deconv1 = nn.ConvTranspose2d(n_filters * 8, n_filters * 8, 4, 2, 1)
-        self.deconv2 = nn.ConvTranspose2d(n_filters * 8 * 2, n_filters * 8, 4, 2, 1)
-        self.deconv3 = nn.ConvTranspose2d(n_filters * 8 * 2, n_filters * 8, 4, 2, 1)
-        self.deconv4 = nn.ConvTranspose2d(n_filters * 8 * 2, n_filters * 8, 4, 2, 1)
-        self.deconv5 = nn.ConvTranspose2d(n_filters * 8 * 2, n_filters * 4, 4, 2, 1)
-        self.deconv6 = nn.ConvTranspose2d(n_filters * 4 * 2, n_filters * 2, 4, 2, 1)
-        self.deconv7 = nn.ConvTranspose2d(n_filters * 2 * 2, n_filters, 4, 2, 1)
-        self.deconv8 = nn.ConvTranspose2d(n_filters * 2, n_channel_output, 4, 2, 1)
+        ######### ref
+        #
+        # nn.Sequential(
+        #     nn.Upsample(scale_factor=2, mode="bilinear"),
+        #     nn.ReflectionPad2d(1),
+        #     nn.Conv2d(
+        #         ngf * mult, int(ngf * mult / 2), kernel_size=3, stride=1, padding=0
+        #     ),
+        # )
+        #
+        # nn.ConvTranspose2d(
+        #     ngf * mult,
+        #     int(ngf * mult / 2),
+        #     kernel_size=3,
+        #     stride=2,
+        #     padding=1,
+        #     output_padding=1,
+        #     bias=use_bias,
+        # ),
+
+        self.deconv1 = nn.Sequential(
+            nn.Upsample(scale_factor=2, mode="bilinear"),
+            # nn.ReflectionPad2d(1),
+            nn.Conv2d(n_filters * 8, n_filters * 8, kernel_size=3, stride=1, padding=1),
+        )
+        self.deconv2 = nn.Sequential(
+            nn.Upsample(scale_factor=2, mode="bilinear"),
+            # nn.ReflectionPad2d(1),
+            nn.Conv2d(
+                n_filters * 8 * 2, n_filters * 8, kernel_size=3, stride=1, padding=1
+            ),
+        )
+        self.deconv3 = nn.Sequential(
+            nn.Upsample(scale_factor=2, mode="bilinear"),
+            # nn.ReflectionPad2d(1),
+            nn.Conv2d(
+                n_filters * 8 * 2, n_filters * 8, kernel_size=3, stride=1, padding=1
+            ),
+        )
+        self.deconv4 = nn.Sequential(
+            nn.Upsample(scale_factor=2, mode="bilinear"),
+            # nn.ReflectionPad2d(1),
+            nn.Conv2d(
+                n_filters * 8 * 2, n_filters * 8, kernel_size=3, stride=1, padding=1
+            ),
+        )
+        self.deconv5 = nn.Sequential(
+            nn.Upsample(scale_factor=2, mode="bilinear"),
+            # nn.ReflectionPad2d(1),
+            nn.Conv2d(
+                n_filters * 8 * 2, n_filters * 4, kernel_size=3, stride=1, padding=1
+            ),
+        )
+        self.deconv6 = nn.Sequential(
+            nn.Upsample(scale_factor=2, mode="bilinear"),
+            # nn.ReflectionPad2d(1),
+            nn.Conv2d(
+                n_filters * 4 * 2, n_filters * 2, kernel_size=3, stride=1, padding=1
+            ),
+        )
+        self.deconv7 = nn.Sequential(
+            nn.Upsample(scale_factor=2, mode="bilinear"),
+            # nn.ReflectionPad2d(1),
+            nn.Conv2d(n_filters * 2 * 2, n_filters, kernel_size=3, stride=1, padding=1),
+        )
+        self.deconv8 = nn.Sequential(
+            nn.Upsample(scale_factor=2, mode="bilinear"),
+            # nn.ReflectionPad2d(1),
+            nn.Conv2d(
+                n_filters * 2, n_channel_output, kernel_size=3, stride=1, padding=1
+            ),
+        )
 
         self.batch_norm = nn.BatchNorm2d(n_filters)
         self.batch_norm2 = nn.BatchNorm2d(n_filters * 2)
