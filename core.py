@@ -10,6 +10,7 @@ from argparse import Namespace
 
 from torchmetrics import MetricCollection, MeanSquaredError
 from metrics.ssim import SSIM
+from metrics.fid import FID
 
 
 class CGan(pl.LightningModule):
@@ -36,7 +37,7 @@ class CGan(pl.LightningModule):
         self.gan_loss = nn.BCELoss()
 
         # metrics
-        metrics = MetricCollection({"mse": MeanSquaredError(), "ssim": SSIM()})
+        metrics = MetricCollection({"mse": MeanSquaredError(), "ssim": SSIM(), "fid": FID()})
         self.train_metrics = metrics.clone(prefix="Train/")
         self.val_metrics = metrics.clone(prefix="Validation/")
         self.test_metrics = metrics.clone(prefix="Test/")
