@@ -4,7 +4,8 @@ import pytorch_lightning as pl
 from torch import nn
 from torch.optim import Adam
 
-from model import D, G, weights_init
+from utils import weights_init, denormalize
+
 
 from argparse import Namespace
 
@@ -51,17 +52,15 @@ class CGan(pl.LightningModule):
         # in lightning, forward defines the prediction/inference actions
         return self.generator(x)
 
-    def generator_loss(
-        self, albedo, direct, normal, depth, gt, batch_idx
-    ) -> torch.Tensor:
+    def generator_loss(self, albedo, direct, normal, depth, gt, batch_idx) -> torch.Tensor:
 
         z = torch.cat((albedo, direct, normal, depth), 1)
         fake = self.generator(z)
 
         if batch_idx == 0:
             logger = self.logger.experiment
-            logger.add_images("Train/fake", fake, self.current_epoch)
-            logger.add_images("Train/real", gt, self.current_epoch)
+            logger.add_images("Train/fake", denormalize(fake), self.current_epoch)
+            logger.add_images("Train/real", denormalize(gt), self.current_epoch)
 
         prediction = self.discriminator(torch.cat((z, fake), 1))
         y = torch.ones(prediction.size(), device=self.device)
@@ -73,6 +72,12 @@ class CGan(pl.LightningModule):
 
         gan_loss = self.gan_loss(prediction, y)
         l1_loss = self.l1_loss(fake, gt)
+
+        self.log_dict(
+            {"Train/gan_loss": gan_loss, "Train/l1_loss": l1_loss},
+            on_step=False,
+            on_epoch=True,
+        )
 
         return gan_loss + self.lambda_factor * l1_loss
 
@@ -97,8 +102,17 @@ class CGan(pl.LightningModule):
         # calculate error and backpropagate
         fake_loss = self.gan_loss(prediction_fake, y_fake)
 
+        self.log_dict(
+            {
+                "Train/D(x)": prediction_real.mean(),
+                "Train/D(G(z))": prediction_fake.mean(),
+            },
+            on_step=False,
+            on_epoch=True,
+        )
+
         # gradient backprop & optimize ONLY D's parameters
-        return real_loss + fake_loss
+        return (real_loss + fake_loss) * 0.5
 
     def training_step(self, batch, batch_idx, optimizer_idx):
         # train generator
@@ -122,8 +136,8 @@ class CGan(pl.LightningModule):
 
         if batch_idx == 0:
             logger = self.logger.experiment
-            logger.add_images("Validation/fake", fake, self.current_epoch)
-            logger.add_images("Validation/real", gt, self.current_epoch)
+            logger.add_images("Validation/fake", denormalize(fake), self.current_epoch)
+            logger.add_images("Validation/real", denormalize(gt), self.current_epoch)
 
         with torch.no_grad():
             self.val_metrics(fake, gt)
@@ -138,8 +152,8 @@ class CGan(pl.LightningModule):
 
         if batch_idx == 0:
             logger = self.logger.experiment
-            logger.add_images("Test/fake", fake, self.current_epoch)
-            logger.add_images("Test/real", gt, self.current_epoch)
+            logger.add_images("Test/fake", denormalize(fake), self.current_epoch)
+            logger.add_images("Test/real", denormalize(gt), self.current_epoch)
 
         with torch.no_grad():
             self.test_metrics(fake, gt)
@@ -147,10 +161,8 @@ class CGan(pl.LightningModule):
         self.log_dict(self.test_metrics, on_step=False, on_epoch=True)
 
     def configure_optimizers(self):
-        opt_d = Adam(
-            self.discriminator.parameters(), lr=self.lr, betas=(self.beta1, self.beta2)
-        )
         opt_g = Adam(self.generator.parameters(), lr=self.lr, betas=(self.beta1, self.beta2))
+        opt_d = Adam(self.discriminator.parameters(), lr=self.lr, betas=(self.beta1, self.beta2))
         return [opt_g, opt_d]
 
     def get_progress_bar_dict(self):
