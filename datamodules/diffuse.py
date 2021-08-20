@@ -20,15 +20,15 @@ class DiffuseDataModule(LightningDataModule):
         # Assign train/val datasets for use in dataloaders
         if stage == "fit" or stage is None:
             train_dir = join(self.data_dir, "train")
-            self.train_dataset = DataLoaderHelper(train_dir)
+            self.train_dataset = DataLoaderHelper(train_dir, True)
 
             val_dir = join(self.data_dir, "val")
-            self.val_dataset = DataLoaderHelper(val_dir)
+            self.val_dataset = DataLoaderHelper(val_dir, False)
 
         # Assign test dataset for use in dataloader(s)
         if stage == "test" or stage is None:
             test_dir = join(self.data_dir, "test")
-            self.test_dataset = DataLoaderHelper(test_dir)
+            self.test_dataset = DataLoaderHelper(test_dir, False)
 
     def train_dataloader(self):
         return DataLoader(
