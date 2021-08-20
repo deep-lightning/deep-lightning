@@ -6,6 +6,8 @@ from torch.optim import Adam
 
 from utils import weights_init, denormalize
 
+from models.generator import Generator
+from models.discriminator import Discriminator
 
 from argparse import Namespace
 
@@ -18,14 +20,14 @@ class CGan(pl.LightningModule):
         super().__init__()
         self.save_hyperparameters(hparams)
 
-        self.generator = G(
+        self.generator = Generator(
             hparams.n_channel_input * 4,
             hparams.n_channel_output,
             hparams.n_generator_filters,
         )
         self.generator.apply(weights_init)
 
-        self.discriminator = D(
+        self.discriminator = Discriminator(
             hparams.n_channel_input * 4,
             hparams.n_channel_output,
             hparams.n_discriminator_filters,
