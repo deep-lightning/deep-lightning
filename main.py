@@ -33,7 +33,7 @@ if __name__ == "__main__":
     parser.add_argument("--n_channel_output", type=int, default=3, help="number of output channels")
     parser.add_argument("--n_generator_filters", type=int, default=64, help="number of initial generator filters")
     parser.add_argument(
-        "--n_discriminator_filters", type=int, default=64, help="number of initial discriminator filters"
+        "--n_critic_filters", type=int, default=64, help="number of initial critic filters"
     )
     parser.add_argument("--lr", type=float, default=0.0002, help="learning rate")
     parser.add_argument("--beta1", type=float, default=0.5, help="beta1")

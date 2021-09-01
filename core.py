@@ -2,12 +2,12 @@ import torch
 import pytorch_lightning as pl
 
 from torch import nn
-from torch.optim import Adam
+from torch.optim import Adam, RMSProp
 
 from utils import weights_init, denormalize
 
 from models.generator import Generator
-from models.discriminator import Discriminator
+from models.critic import Critic
 
 from argparse import Namespace
 
@@ -27,12 +27,12 @@ class CGan(pl.LightningModule):
         )
         self.generator.apply(weights_init)
 
-        self.discriminator = Discriminator(
+        self.critic = Critic(
             hparams.n_channel_input * 4,
             hparams.n_channel_output,
-            hparams.n_discriminator_filters,
+            hparams.n_critic_filters,
         )
-        self.discriminator.apply(weights_init)
+        self.critic.apply(weights_init)
 
         # losses
         self.l1_loss = nn.L1Loss()
@@ -64,7 +64,7 @@ class CGan(pl.LightningModule):
             logger.add_images("Train/fake", denormalize(fake), self.current_epoch)
             logger.add_images("Train/real", denormalize(gt), self.current_epoch)
 
-        prediction = self.discriminator(torch.cat((z, fake), 1))
+        prediction = self.critic(torch.cat((z, fake), 1))
         y = torch.ones(prediction.size(), device=self.device)
 
         with torch.no_grad():
@@ -83,14 +83,14 @@ class CGan(pl.LightningModule):
 
         return gan_loss + self.lambda_factor * l1_loss
 
-    def discriminator_loss(self, albedo, direct, normal, depth, gt) -> torch.Tensor:
+    def critic_loss(self, albedo, direct, normal, depth, gt) -> torch.Tensor:
 
         z = torch.cat((albedo, direct, normal, depth), 1)
         fake = self.generator(z)
 
         # train on real data
         real_data = torch.cat((z, gt), 1)
-        prediction_real = self.discriminator(real_data)
+        prediction_real = self.critic(real_data)
         y_real = torch.ones(prediction_real.size(), device=self.device)
 
         # calculate error and backpropagate
@@ -98,7 +98,7 @@ class CGan(pl.LightningModule):
 
         # train on fake data
         fake_data = torch.cat((z, fake), 1)
-        prediction_fake = self.discriminator(fake_data)
+        prediction_fake = self.critic(fake_data)
         y_fake = torch.zeros(prediction_real.size(), device=self.device)
 
         # calculate error and backpropagate
@@ -123,9 +123,9 @@ class CGan(pl.LightningModule):
             result = self.generator_loss(*batch, batch_idx)
             self.log("Loss/G", result, on_step=False, on_epoch=True)
 
-        # train discriminator
+        # train critic
         if optimizer_idx == 1:
-            result = self.discriminator_loss(*batch)
+            result = self.critic_loss(*batch)
             self.log("Loss/D", result, on_step=False, on_epoch=True)
 
         return result
@@ -164,7 +164,7 @@ class CGan(pl.LightningModule):
 
     def configure_optimizers(self):
         opt_g = Adam(self.generator.parameters(), lr=self.lr, betas=(self.beta1, self.beta2))
-        opt_d = Adam(self.discriminator.parameters(), lr=self.lr, betas=(self.beta1, self.beta2))
+        opt_d = RMSProp(self.critic.parameters(), lr=self.lr)
         return [opt_g, opt_d]
 
     def get_progress_bar_dict(self):

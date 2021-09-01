@@ -31,7 +31,7 @@ class EncoderBlock(nn.Module):
         return self.model(x)
 
 
-class Discriminator(nn.Module):
+class Critic(nn.Module):
     def __init__(self, in_ch: int, out_ch: int, n_filt: int):
         super().__init__()
 
