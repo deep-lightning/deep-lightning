@@ -22,9 +22,6 @@ class EncoderBlock(nn.Module):
         if position is Position.MIDDLE:
             layers.append(nn.BatchNorm2d(out_ch))
 
-        if position is Position.LAST:
-            layers.append(nn.Sigmoid())
-
         self.model = nn.Sequential(*layers)
 
     def forward(self, x):

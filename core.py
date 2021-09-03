@@ -66,14 +66,13 @@ class CGan(pl.LightningModule):
             logger.add_images("Train/real", denormalize(gt), self.current_epoch)
 
         prediction = self.critic(torch.cat((z, fake), 1))
-        y = torch.ones(prediction.size(), device=self.device)
 
         with torch.no_grad():
             self.train_metrics(fake, gt)
 
         self.log_dict(self.train_metrics, on_step=False, on_epoch=True)
 
-        gan_loss = self.gan_loss(prediction, y)
+        gan_loss = -torch.mean(prediction)
         l1_loss = self.l1_loss(fake, gt)
 
         self.log_dict(
@@ -92,18 +91,10 @@ class CGan(pl.LightningModule):
         # train on real data
         real_data = torch.cat((z, gt), 1)
         prediction_real = self.critic(real_data)
-        y_real = torch.ones(prediction_real.size(), device=self.device)
-
-        # calculate error and backpropagate
-        real_loss = self.gan_loss(prediction_real, y_real)
 
         # train on fake data
         fake_data = torch.cat((z, fake), 1)
         prediction_fake = self.critic(fake_data)
-        y_fake = torch.zeros(prediction_real.size(), device=self.device)
-
-        # calculate error and backpropagate
-        fake_loss = self.gan_loss(prediction_fake, y_fake)
 
         self.log_dict(
             {
@@ -115,7 +106,7 @@ class CGan(pl.LightningModule):
         )
 
         # gradient backprop & optimize ONLY D's parameters
-        return (real_loss + fake_loss) * 0.5
+        return -(torch.mean(prediction_real) - torch.mean(prediction_fake))
 
     def training_step(self, batch, batch_idx, optimizer_idx):
         # train generator
@@ -125,12 +116,17 @@ class CGan(pl.LightningModule):
             self.log("Loss/G", result, on_step=False, on_epoch=True)
 
         # train critic
-        for _ in range(self.n_critic):
-          if optimizer_idx == 1:
+        if optimizer_idx == 1:
+            for _ in range(self.n_critic):
               result = self.critic_loss(*batch)
               self.log("Loss/D", result, on_step=False, on_epoch=True)
 
         return result
+
+    # should only be invoked when for critic update
+    def on_before_zero_grad(self):
+        for p in self.critic.parameters():
+            p.data.clamp_(-0.01, 0.01)
 
     def validation_step(self, batch, batch_idx):
         albedo, direct, normal, depth, gt = batch
