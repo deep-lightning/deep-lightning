@@ -29,6 +29,7 @@ if __name__ == "__main__":
 
     parser.add_argument("--dataset", required=True, help="location of train, val and test folders")
     parser.add_argument("--batch_size", type=int, default=4, help="batch size")
+    parser.add_argument("--n_critic", type=int, default=5, help="times that the critic is updated for each update to the generator")
     parser.add_argument("--n_channel_input", type=int, default=3, help="number of input channels")
     parser.add_argument("--n_channel_output", type=int, default=3, help="number of output channels")
     parser.add_argument("--n_generator_filters", type=int, default=64, help="number of initial generator filters")

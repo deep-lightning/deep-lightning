@@ -46,6 +46,7 @@ class CGan(pl.LightningModule):
 
         # hparams
         self.lr = hparams.lr
+        self.n_critic = hparams.n_critic
         self.beta1 = hparams.beta1
         self.beta2 = hparams.beta2
         self.lambda_factor = hparams.lambda_factor
@@ -124,9 +125,10 @@ class CGan(pl.LightningModule):
             self.log("Loss/G", result, on_step=False, on_epoch=True)
 
         # train critic
-        if optimizer_idx == 1:
-            result = self.critic_loss(*batch)
-            self.log("Loss/D", result, on_step=False, on_epoch=True)
+        for _ in range(self.n_critic):
+          if optimizer_idx == 1:
+              result = self.critic_loss(*batch)
+              self.log("Loss/D", result, on_step=False, on_epoch=True)
 
         return result
 
