@@ -54,7 +54,7 @@ class CGan(pl.LightningModule):
         # in lightning, forward defines the prediction/inference actions
         return self.generator(x)
 
-    def generator_loss(self, albedo, direct, normal, depth, gt, batch_idx) -> torch.Tensor:
+    def generator_loss(self, albedo, direct, normal, depth, gt, indirect, batch_idx) -> torch.Tensor:
 
         z = torch.cat((albedo, direct, normal, depth), 1)
         fake = self.generator(z)
@@ -62,18 +62,25 @@ class CGan(pl.LightningModule):
         if batch_idx == 0:
             logger = self.logger.experiment
             logger.add_images("Train/fake", denormalize(fake), self.current_epoch)
+            logger.add_images("Train/indirect", denormalize(indirect), self.current_epoch)
+            logger.add_images(
+                "Train/fake+direct", (denormalize(fake) + denormalize(direct)).clamp(0, 1), self.current_epoch
+            )
+            logger.add_images(
+                "Train/indirect+direct", (denormalize(indirect) + denormalize(direct)).clamp(0, 1), self.current_epoch
+            )
             logger.add_images("Train/real", denormalize(gt), self.current_epoch)
 
         prediction = self.discriminator(torch.cat((z, fake), 1))
         y = torch.ones(prediction.size(), device=self.device)
 
         with torch.no_grad():
-            self.train_metrics(fake, gt)
+            self.train_metrics(fake, indirect)
 
         self.log_dict(self.train_metrics, on_step=False, on_epoch=True)
 
         gan_loss = self.gan_loss(prediction, y)
-        l1_loss = self.l1_loss(fake, gt)
+        l1_loss = self.l1_loss(fake, indirect)
 
         self.log_dict(
             {"Train/gan_loss": gan_loss, "Train/l1_loss": l1_loss},
@@ -83,13 +90,13 @@ class CGan(pl.LightningModule):
 
         return gan_loss + self.lambda_factor * l1_loss
 
-    def discriminator_loss(self, albedo, direct, normal, depth, gt) -> torch.Tensor:
+    def discriminator_loss(self, albedo, direct, normal, depth, gt, indirect) -> torch.Tensor:
 
         z = torch.cat((albedo, direct, normal, depth), 1)
         fake = self.generator(z)
 
         # train on real data
-        real_data = torch.cat((z, gt), 1)
+        real_data = torch.cat((z, indirect), 1)
         prediction_real = self.discriminator(real_data)
         y_real = torch.ones(prediction_real.size(), device=self.device)
 
@@ -131,7 +138,7 @@ class CGan(pl.LightningModule):
         return result
 
     def validation_step(self, batch, batch_idx):
-        albedo, direct, normal, depth, gt = batch
+        albedo, direct, normal, depth, gt, indirect = batch
 
         z = torch.cat((albedo, direct, normal, depth), 1)
         fake = self.generator(z)
@@ -139,15 +146,24 @@ class CGan(pl.LightningModule):
         if batch_idx == 0:
             logger = self.logger.experiment
             logger.add_images("Validation/fake", denormalize(fake), self.current_epoch)
+            logger.add_images("Validation/indirect", denormalize(indirect), self.current_epoch)
+            logger.add_images(
+                "Validation/fake+direct", (denormalize(fake) + denormalize(direct)).clamp(0, 1), self.current_epoch
+            )
+            logger.add_images(
+                "Validation/indirect+direct",
+                (denormalize(indirect) + denormalize(direct)).clamp(0, 1),
+                self.current_epoch,
+            )
             logger.add_images("Validation/real", denormalize(gt), self.current_epoch)
 
         with torch.no_grad():
-            self.val_metrics(fake, gt)
+            self.val_metrics(fake, indirect)
 
         self.log_dict(self.val_metrics, on_step=False, on_epoch=True)
 
     def test_step(self, batch, batch_idx):
-        albedo, direct, normal, depth, gt = batch
+        albedo, direct, normal, depth, gt, indirect = batch
 
         z = torch.cat((albedo, direct, normal, depth), 1)
         fake = self.generator(z)
@@ -155,10 +171,17 @@ class CGan(pl.LightningModule):
         if batch_idx == 0:
             logger = self.logger.experiment
             logger.add_images("Test/fake", denormalize(fake), self.current_epoch)
+            logger.add_images("Test/indirect", denormalize(indirect), self.current_epoch)
+            logger.add_images(
+                "Test/fake+direct", (denormalize(fake) + denormalize(direct)).clamp(0, 1), self.current_epoch
+            )
+            logger.add_images(
+                "Test/indirect+direct", (denormalize(indirect) + denormalize(direct)).clamp(0, 1), self.current_epoch
+            )
             logger.add_images("Test/real", denormalize(gt), self.current_epoch)
 
         with torch.no_grad():
-            self.test_metrics(fake, gt)
+            self.test_metrics(fake, indirect)
 
         self.log_dict(self.test_metrics, on_step=False, on_epoch=True)
 
