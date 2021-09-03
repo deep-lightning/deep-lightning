@@ -4,7 +4,7 @@ import pytorch_lightning as pl
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 
 from core import CGan
-from datamodules.diffuse import DiffuseDataModule
+from datamodules.diffuse_re import DiffuseDataModule
 
 
 def main(hparams):

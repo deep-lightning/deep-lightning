@@ -8,14 +8,16 @@ from torchvision import transforms
 import torchvision.transforms.functional as TF
 from PIL import Image
 
+import re
+
 
 class RequiredImgs(Enum):
-    ALBEDO = "diffuse.png"
-    DIRECT = "local.png"
-    NORMAL = "normal.png"
-    DEPTH = "z.png"
-    GT = "global.png"
-    # INDIRECT = "indirect.png"
+    ALBEDO = "diffuse.tiff"
+    DIRECT = "local.tiff"
+    NORMAL = "normal.tiff"
+    DEPTH = "z.tiff"
+    GT = "global.tiff"
+    INDIRECT = "indirect.tiff"
 
     @classmethod
     def present_in(cls, folder):
@@ -24,13 +26,17 @@ class RequiredImgs(Enum):
 
 
 class DataLoaderHelper(Dataset):
-    def __init__(self, root_dir: str, is_train: bool):
+    def __init__(self, root_dir: str, is_train: bool, pattern: str = ".*"):
         super().__init__()
 
         self.is_train = is_train
 
+        cond = re.compile(pattern)
+
         self.valid_folders = [
-            join(root_dir, folder) for folder in listdir(root_dir) if RequiredImgs.present_in(join(root_dir, folder))
+            join(root_dir, folder)
+            for folder in listdir(root_dir)
+            if cond.match(folder) and RequiredImgs.present_in(join(root_dir, folder))
         ]
 
         self.base_transforms = [
