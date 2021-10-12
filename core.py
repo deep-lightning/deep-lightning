@@ -4,33 +4,33 @@ import pytorch_lightning as pl
 from torch import nn
 from torch.optim import Adam
 
-from utils import weights_init, denormalize
+from pathlib import Path
+
+from utils import to_ldr, weights_init
 
 from models.generator import Generator
 from models.discriminator import Discriminator
-
-from argparse import Namespace
 
 from torchmetrics import MetricCollection, MeanSquaredError
 from metrics.ssim import SSIM
 
 
 class CGan(pl.LightningModule):
-    def __init__(self, hparams: Namespace) -> None:
+    def __init__(self, **kwargs) -> None:
         super().__init__()
-        self.save_hyperparameters(hparams)
+        self.save_hyperparameters()
 
         self.generator = Generator(
-            hparams.n_channel_input * 4,
-            hparams.n_channel_output,
-            hparams.n_generator_filters,
+            self.hparams.n_channel_input * 4,
+            self.hparams.n_channel_output,
+            self.hparams.n_generator_filters,
         )
         self.generator.apply(weights_init)
 
         self.discriminator = Discriminator(
-            hparams.n_channel_input * 4,
-            hparams.n_channel_output,
-            hparams.n_discriminator_filters,
+            self.hparams.n_channel_input * 4,
+            self.hparams.n_channel_output,
+            self.hparams.n_discriminator_filters,
         )
         self.discriminator.apply(weights_init)
 
@@ -44,14 +44,7 @@ class CGan(pl.LightningModule):
         self.val_metrics = metrics.clone(prefix="Validation/")
         self.test_metrics = metrics.clone(prefix="Test/")
 
-        # hparams
-        self.lr = hparams.lr
-        self.beta1 = hparams.beta1
-        self.beta2 = hparams.beta2
-        self.lambda_factor = hparams.lambda_factor
-
     def forward(self, x):
-        # in lightning, forward defines the prediction/inference actions
         return self.generator(x)
 
     def generator_loss(self, albedo, direct, normal, depth, gt, indirect, batch_idx) -> torch.Tensor:
@@ -61,15 +54,8 @@ class CGan(pl.LightningModule):
 
         if batch_idx == 0:
             logger = self.logger.experiment
-            logger.add_images("Train/fake", denormalize(fake), self.current_epoch)
-            logger.add_images("Train/indirect", denormalize(indirect), self.current_epoch)
-            logger.add_images(
-                "Train/fake+direct", (denormalize(fake) + denormalize(direct)).clamp(0, 1), self.current_epoch
-            )
-            logger.add_images(
-                "Train/indirect+direct", (denormalize(indirect) + denormalize(direct)).clamp(0, 1), self.current_epoch
-            )
-            logger.add_images("Train/real", denormalize(gt), self.current_epoch)
+            ldr_img = to_ldr(direct, gt, indirect, fake, Path(self.logger.log_dir) / "train.hdr")
+            logger.add_image("Train", ldr_img, self.current_epoch)
 
         prediction = self.discriminator(torch.cat((z, fake), 1))
         y = torch.ones(prediction.size(), device=self.device)
@@ -88,7 +74,7 @@ class CGan(pl.LightningModule):
             on_epoch=True,
         )
 
-        return gan_loss + self.lambda_factor * l1_loss
+        return gan_loss + self.hparams.lambda_factor * l1_loss
 
     def discriminator_loss(self, albedo, direct, normal, depth, gt, indirect) -> torch.Tensor:
 
@@ -105,7 +91,7 @@ class CGan(pl.LightningModule):
 
         # train on fake data
         fake_data = torch.cat((z, fake), 1)
-        prediction_fake = self.discriminator(fake_data)
+        prediction_fake = self.discriminator(fake_data.detach())
         y_fake = torch.zeros(prediction_real.size(), device=self.device)
 
         # calculate error and backpropagate
@@ -143,19 +129,10 @@ class CGan(pl.LightningModule):
         z = torch.cat((albedo, direct, normal, depth), 1)
         fake = self.generator(z)
 
-        if batch_idx == 0:
+        if batch_idx % 128 == 0:
             logger = self.logger.experiment
-            logger.add_images("Validation/fake", denormalize(fake), self.current_epoch)
-            logger.add_images("Validation/indirect", denormalize(indirect), self.current_epoch)
-            logger.add_images(
-                "Validation/fake+direct", (denormalize(fake) + denormalize(direct)).clamp(0, 1), self.current_epoch
-            )
-            logger.add_images(
-                "Validation/indirect+direct",
-                (denormalize(indirect) + denormalize(direct)).clamp(0, 1),
-                self.current_epoch,
-            )
-            logger.add_images("Validation/real", denormalize(gt), self.current_epoch)
+            ldr_img = to_ldr(direct, gt, indirect, fake, Path(self.logger.log_dir) / f"val_{batch_idx}.hdr")
+            logger.add_image(f"Validation/{batch_idx}", ldr_img, self.current_epoch)
 
         with torch.no_grad():
             self.val_metrics(fake, indirect)
@@ -168,17 +145,10 @@ class CGan(pl.LightningModule):
         z = torch.cat((albedo, direct, normal, depth), 1)
         fake = self.generator(z)
 
-        if batch_idx == 0:
+        if batch_idx % 128 == 0:
             logger = self.logger.experiment
-            logger.add_images("Test/fake", denormalize(fake), self.current_epoch)
-            logger.add_images("Test/indirect", denormalize(indirect), self.current_epoch)
-            logger.add_images(
-                "Test/fake+direct", (denormalize(fake) + denormalize(direct)).clamp(0, 1), self.current_epoch
-            )
-            logger.add_images(
-                "Test/indirect+direct", (denormalize(indirect) + denormalize(direct)).clamp(0, 1), self.current_epoch
-            )
-            logger.add_images("Test/real", denormalize(gt), self.current_epoch)
+            ldr_img = to_ldr(direct, gt, indirect, fake, Path(self.logger.log_dir) / f"test_{batch_idx}.hdr")
+            logger.add_image(f"Test/{batch_idx}", ldr_img, self.current_epoch)
 
         with torch.no_grad():
             self.test_metrics(fake, indirect)
@@ -186,8 +156,9 @@ class CGan(pl.LightningModule):
         self.log_dict(self.test_metrics, on_step=False, on_epoch=True)
 
     def configure_optimizers(self):
-        opt_g = Adam(self.generator.parameters(), lr=self.lr, betas=(self.beta1, self.beta2))
-        opt_d = Adam(self.discriminator.parameters(), lr=self.lr, betas=(self.beta1, self.beta2))
+        betas = (self.hparams.beta1, self.hparams.beta2)
+        opt_g = Adam(self.generator.parameters(), lr=self.hparams.lr, betas=betas)
+        opt_d = Adam(self.discriminator.parameters(), lr=self.hparams.lr, betas=betas)
         return [opt_g, opt_d]
 
     def get_progress_bar_dict(self):
