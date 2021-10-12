@@ -6,18 +6,19 @@ from enum import Enum
 from torch.utils.data import Dataset
 from torchvision import transforms
 import torchvision.transforms.functional as TF
-from PIL import Image
 
 import re
+import cv2
+import torch
 
 
 class RequiredImgs(Enum):
-    ALBEDO = "diffuse.tiff"
-    DIRECT = "local.tiff"
-    NORMAL = "normal.tiff"
-    DEPTH = "z.tiff"
-    GT = "global.tiff"
-    INDIRECT = "indirect.tiff"
+    ALBEDO = "diffuse.hdr"
+    DIRECT = "local.hdr"
+    NORMAL = "normal.hdr"
+    DEPTH = "z.hdr"
+    GT = "global.hdr"
+    INDIRECT = "indirect.hdr"
 
     @classmethod
     def present_in(cls, folder):
@@ -33,15 +34,15 @@ class DataLoaderHelper(Dataset):
 
         cond = re.compile(pattern)
 
-        self.valid_folders = [
-            join(root_dir, folder)
-            for folder in listdir(root_dir)
-            if cond.match(folder) and RequiredImgs.present_in(join(root_dir, folder))
-        ]
+        self.valid_folders = []
+        for folder in listdir(root_dir):
+            path = join(root_dir, folder)
+            if cond.match(folder) and RequiredImgs.present_in(path):
+                self.valid_folders.append(path)
 
         self.base_transforms = [
             transforms.Resize(256),
-            transforms.ToTensor(),
+            transforms.Lambda(lambda x: x / (1 + x)),
             transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
         ]
 
@@ -57,9 +58,13 @@ class DataLoaderHelper(Dataset):
 
         composition = transforms.Compose(transformations)
 
-        return tuple(
-            composition(Image.open(join(self.valid_folders[index], img.value)).convert("RGB")) for img in RequiredImgs
-        )
+        result = []
+        for img in RequiredImgs:
+            image = cv2.imread(join(self.valid_folders[index], img.value), flags=cv2.IMREAD_ANYDEPTH)
+            image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            image_torch = torch.from_numpy(image_rgb).permute(2, 0, 1)
+            result.append(composition(image_torch))
+        return result
 
     def __len__(self):
         return len(self.valid_folders)
