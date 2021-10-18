@@ -4,14 +4,12 @@ import pytorch_lightning as pl
 from torch import nn
 from torch.optim import Adam
 
-from pathlib import Path
-
-from utils import to_ldr, weights_init
+from utils import to_display, weights_init
 
 from models.generator import Generator
 from models.discriminator import Discriminator
 
-from torchmetrics import MetricCollection, MeanSquaredError
+from torchmetrics import MetricCollection, MeanSquaredError, PSNR
 from metrics.ssim import SSIM
 
 
@@ -39,7 +37,7 @@ class CGan(pl.LightningModule):
         self.gan_loss = nn.BCELoss()
 
         # metrics
-        metrics = MetricCollection({"mse": MeanSquaredError(), "ssim": SSIM()})
+        metrics = MetricCollection({"mse": MeanSquaredError(), "ssim": SSIM(), "psnr": PSNR(data_range=2)})
         self.train_metrics = metrics.clone(prefix="Train/")
         self.val_metrics = metrics.clone(prefix="Validation/")
         self.test_metrics = metrics.clone(prefix="Test/")
@@ -54,7 +52,7 @@ class CGan(pl.LightningModule):
 
         if batch_idx == 0:
             logger = self.logger.experiment
-            ldr_img = to_ldr(direct, gt, indirect, fake, Path(self.logger.log_dir) / "train.hdr")
+            ldr_img = to_display(direct, gt, indirect, fake)
             logger.add_image("Train", ldr_img, self.current_epoch)
 
         prediction = self.discriminator(torch.cat((z, fake), 1))
@@ -131,7 +129,7 @@ class CGan(pl.LightningModule):
 
         if batch_idx % 128 == 0:
             logger = self.logger.experiment
-            ldr_img = to_ldr(direct, gt, indirect, fake, Path(self.logger.log_dir) / f"val_{batch_idx}.hdr")
+            ldr_img = to_display(direct, gt, indirect, fake)
             logger.add_image(f"Validation/{batch_idx}", ldr_img, self.current_epoch)
 
         with torch.no_grad():
@@ -147,7 +145,7 @@ class CGan(pl.LightningModule):
 
         if batch_idx % 128 == 0:
             logger = self.logger.experiment
-            ldr_img = to_ldr(direct, gt, indirect, fake, Path(self.logger.log_dir) / f"test_{batch_idx}.hdr")
+            ldr_img = to_display(direct, gt, indirect, fake)
             logger.add_image(f"Test/{batch_idx}", ldr_img, self.current_epoch)
 
         with torch.no_grad():

@@ -1,11 +1,8 @@
 import torch
-import torch.nn as nn
+from torch import nn
+
 import torchvision
-
-import cv2
-import numpy as np
-
-from pathlib import Path
+from torchvision import transforms
 
 
 def weights_init(m):
@@ -19,34 +16,50 @@ def weights_init(m):
         nn.init.constant_(m.bias.data, 0)
 
 
-def denormalize(input: torch.Tensor) -> torch.Tensor:
-    undo = (input * 0.5) + 0.5
-    return undo / (1 - undo)  # watchout zero div, almost sure cant happen
+mean = torch.tensor([0.5, 0.5, 0.5])
+std = torch.tensor([0.5, 0.5, 0.5])
+
+# normalize image in range [0,1] to [-1,1]
+norm = transforms.Normalize(mean.tolist(), std.tolist())
+
+# normalize image in range [-1,1] to [0,1]
+unnorm = transforms.Normalize((-mean / std).tolist(), (1.0 / std).tolist())
 
 
-def to_ldr(direct: torch.Tensor, gt: torch.Tensor, indirect: torch.Tensor, fake: torch.Tensor, path: Path):
-    direct_un = denormalize(direct)
-    gt_un = denormalize(gt)
-    indirect_un = denormalize(indirect)
-    fake_un = denormalize(fake)
+def hdr2ldr(max_light, image):
+    """Applies Reinhard TMO based on http://www.cmap.polytechnique.fr/~peyre/cours/x2005signal/hdr_photographic.pdf"""
+    return (image * (1 + image / (max_light ** 2))) / (1 + image)
 
-    fake_gt = fake_un + direct_un
-    real_gt = indirect_un + direct_un
 
-    batch = torch.cat((fake_un, indirect_un, fake_gt, real_gt, gt_un), 3)
+def ldr2hdr(max_light, image):
+    """Reverts Reinhard TMO based on https://www.wolframalpha.com/input/?i=inverse+of+f%28x%29+%3D+%28x*%281%2Bx%2Fa%5E2%29%29%2F%281%2Bx%29"""
+    return 0.5 * ((max_light ** 2) * image - (max_light ** 2)) + 0.5 * (
+        (
+            (max_light ** 2)
+            * ((max_light ** 2) * (image ** 2) - 2 * (max_light ** 2) * image + (max_light ** 2) + 4 * image)
+        )
+        ** 0.5
+    )
 
-    epoch = torchvision.utils.make_grid(batch, 1)
-    image = epoch.permute(1, 2, 0).cpu().detach().numpy()
-    image_bgr = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
-    cv2.imwrite(str(path), image_bgr)
 
-    images = []
-    base = batch.permute(0, 2, 3, 1).cpu().detach().numpy()
-    for img in base:
-        tonemap = cv2.createTonemapDrago(gamma=1.4, saturation=0.6)
-        res_base = tonemap.process(img)
-        res_base_8bit = np.clip(res_base * 255, 0, 255).astype("uint8")
-        images.append(res_base_8bit)
+def to_display(direct: torch.Tensor, gt: torch.Tensor, indirect: torch.Tensor, fake: torch.Tensor):
 
-    tonemapped_torch = torch.from_numpy(np.stack(images).transpose(0, 3, 1, 2))
-    return torchvision.utils.make_grid(tonemapped_torch, nrow=1)
+    direct_un = unnorm(direct)
+    gt_un = unnorm(gt)
+    indirect_un = unnorm(indirect)
+    fake_un = unnorm(fake)
+
+    max_light = gt_un.amax(dim=(1, 2, 3)).reshape(-1, 1, 1, 1)
+    direct_untoned = ldr2hdr(max_light, direct_un)
+    gt_untoned = ldr2hdr(max_light, gt_un)
+    indirect_untoned = ldr2hdr(max_light, indirect_un)
+    fake_untoned = ldr2hdr(max_light, fake_un)
+
+    fake_gt = fake_untoned + direct_untoned
+    real_gt = indirect_untoned + direct_untoned
+    diff = indirect_untoned - fake_untoned
+
+    batch = torch.cat((fake_untoned, indirect_untoned, diff, fake_gt, real_gt, gt_untoned), 3)
+    rein = hdr2ldr(max_light, batch)
+    gamma_rein = (rein ** (1 / 2.2)).clip(0, 1)
+    return torchvision.utils.make_grid(gamma_rein, nrow=1)
