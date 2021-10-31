@@ -21,13 +21,26 @@ if __name__ == "__main__":
     parser.add_argument("--beta2", type=float, default=0.999, help="beta2")
     parser.add_argument("--lambda_factor", type=int, default=100, help="L1 regularization factor")
     parser.add_argument("--num_workers", type=int, default=4, help="number of threads for data loader")
-    parser.add_argument("--data_regex", choices=["vanilla", "lights", "cameras", "objects"])
+    parser.add_argument("--data_regex", choices=["vanilla", "positions", "lights", "cameras", "objects"])
 
     parser = pl.Trainer.add_argparse_args(parser)
     hparams = parser.parse_args()
     hparams.deterministic = True
 
-    callbacks = [ModelCheckpoint(monitor="Validation/mse", filename="cgan-{epoch:02d}")]
+    callbacks = [
+        ModelCheckpoint(
+            monitor="Validation/psnr",
+            mode="max",
+            auto_insert_metric_name=False,
+            filename="psnr_epoch={epoch:02d}-psnr={Validation/psnr:.4f}-ssim={Validation/ssim:.4f}-mse={Validation/mse:.6f}",
+        ),
+        ModelCheckpoint(
+            monitor="Validation/ssim",
+            mode="max",
+            auto_insert_metric_name=False,
+            filename="ssim_epoch={epoch:02d}-psnr={Validation/psnr:.4f}-ssim={Validation/ssim:.4f}-mse={Validation/mse:.6f}",
+        ),
+    ]
 
     data = DiffuseDataModule(hparams.dataset, hparams.batch_size, hparams.num_workers, hparams.data_regex)
 

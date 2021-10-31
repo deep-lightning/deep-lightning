@@ -23,6 +23,11 @@ class DiffuseDataModule(LightningDataModule):
             val_regex = "bunny_.*"
             test_regex = "buddha_.*"
 
+        if self.data_regex == "positions":
+            train_regex = "(bunny|buddha|cube|dragon|sphere)_([0-9]?[0-9]?[0-9]|1[0-1][0-9][0-9]).*"
+            val_regex = "(bunny|buddha|cube|dragon|sphere)_1[2-5][0-9][0-9].*"
+            test_regex = "(bunny|buddha|cube|dragon|sphere)_1[6-9][0-9][0-9].*"
+
         # multiple lights
         if self.data_regex == "lights":
             train_regex = "(bunny|buddha)_([0-9]?[0-9]?[0-9]|1[0-1][0-9][0-9]).*"

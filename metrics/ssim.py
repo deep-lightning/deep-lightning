@@ -12,7 +12,7 @@ class SSIM(Metric):
 
     def update(self, preds: torch.Tensor, target: torch.Tensor):
         assert preds.shape == target.shape
-        self.total += ssim(preds, target, data_range=2)
+        self.total += ssim(preds, target, data_range=1)
         self.count += 1
 
     def compute(self):

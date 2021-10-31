@@ -12,6 +12,8 @@ from models.discriminator import Discriminator
 from torchmetrics import MetricCollection, MeanSquaredError, PSNR
 from metrics.ssim import SSIM
 
+from utils import unnorm
+
 
 class CGan(pl.LightningModule):
     def __init__(self, **kwargs) -> None:
@@ -37,7 +39,7 @@ class CGan(pl.LightningModule):
         self.gan_loss = nn.BCELoss()
 
         # metrics
-        metrics = MetricCollection({"mse": MeanSquaredError(), "ssim": SSIM(), "psnr": PSNR(data_range=2)})
+        metrics = MetricCollection({"mse": MeanSquaredError(), "ssim": SSIM(), "psnr": PSNR(data_range=1)})
         self.train_metrics = metrics.clone(prefix="Train/")
         self.val_metrics = metrics.clone(prefix="Validation/")
         self.test_metrics = metrics.clone(prefix="Test/")
@@ -59,12 +61,12 @@ class CGan(pl.LightningModule):
         y = torch.ones(prediction.size(), device=self.device)
 
         with torch.no_grad():
-            self.train_metrics(fake, indirect)
+            self.train_metrics(unnorm(fake), unnorm(indirect))
 
         self.log_dict(self.train_metrics, on_step=False, on_epoch=True)
 
         gan_loss = self.gan_loss(prediction, y)
-        l1_loss = self.l1_loss(fake, indirect)
+        l1_loss = self.l1_loss(fake, indirect) * self.hparams.lambda_factor
 
         self.log_dict(
             {"Train/gan_loss": gan_loss, "Train/l1_loss": l1_loss},
@@ -72,7 +74,7 @@ class CGan(pl.LightningModule):
             on_epoch=True,
         )
 
-        return gan_loss + self.hparams.lambda_factor * l1_loss
+        return gan_loss + l1_loss
 
     def discriminator_loss(self, albedo, direct, normal, depth, gt, indirect) -> torch.Tensor:
 
@@ -100,24 +102,25 @@ class CGan(pl.LightningModule):
                 "Train/D(x)": prediction_real.mean(),
                 "Train/D(G(z))": prediction_fake.mean(),
             },
-            on_step=False,
-            on_epoch=True,
+            on_step=True,
+            on_epoch=False,
         )
 
         # gradient backprop & optimize ONLY D's parameters
         return (real_loss + fake_loss) * 0.5
 
     def training_step(self, batch, batch_idx, optimizer_idx):
-        # train generator
         result = None
-        if optimizer_idx == 0:
-            result = self.generator_loss(*batch, batch_idx)
-            self.log("Loss/G", result, on_step=False, on_epoch=True)
 
         # train discriminator
-        if optimizer_idx == 1:
+        if optimizer_idx == 0:
             result = self.discriminator_loss(*batch)
-            self.log("Loss/D", result, on_step=False, on_epoch=True)
+            self.log("Loss/D", result, on_step=True, on_epoch=False)
+
+        # train generator
+        if optimizer_idx == 1:
+            result = self.generator_loss(*batch, batch_idx)
+            self.log("Loss/G", result, on_step=True, on_epoch=False)
 
         return result
 
@@ -133,7 +136,7 @@ class CGan(pl.LightningModule):
             logger.add_image(f"Validation/{batch_idx}", ldr_img, self.current_epoch)
 
         with torch.no_grad():
-            self.val_metrics(fake, indirect)
+            self.val_metrics(unnorm(fake), unnorm(indirect))
 
         self.log_dict(self.val_metrics, on_step=False, on_epoch=True)
 
@@ -149,7 +152,7 @@ class CGan(pl.LightningModule):
             logger.add_image(f"Test/{batch_idx}", ldr_img, self.current_epoch)
 
         with torch.no_grad():
-            self.test_metrics(fake, indirect)
+            self.test_metrics(unnorm(fake), unnorm(indirect))
 
         self.log_dict(self.test_metrics, on_step=False, on_epoch=True)
 
@@ -157,7 +160,7 @@ class CGan(pl.LightningModule):
         betas = (self.hparams.beta1, self.hparams.beta2)
         opt_g = Adam(self.generator.parameters(), lr=self.hparams.lr, betas=betas)
         opt_d = Adam(self.discriminator.parameters(), lr=self.hparams.lr, betas=betas)
-        return [opt_g, opt_d]
+        return [opt_d, opt_g]
 
     def get_progress_bar_dict(self):
         # don't show the train loss
