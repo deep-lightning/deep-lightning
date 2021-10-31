@@ -57,7 +57,7 @@ def to_display(direct: torch.Tensor, gt: torch.Tensor, indirect: torch.Tensor, f
 
     fake_gt = fake_untoned + direct_untoned
     real_gt = indirect_untoned + direct_untoned
-    diff = indirect_untoned - fake_untoned
+    diff = torch.abs(indirect_untoned - fake_untoned)
 
     batch = torch.cat((fake_untoned, indirect_untoned, diff, fake_gt, real_gt, gt_untoned), 3)
     rein = hdr2ldr(max_light, batch)
