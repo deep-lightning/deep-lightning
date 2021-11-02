@@ -4,16 +4,13 @@ from torch.utils.data import DataLoader
 from dataset import DataLoaderHelper
 
 
-class DiffuseDataModule(LightningDataModule):
+class DataModule(LightningDataModule):
     def __init__(self, data_dir: str, batch_size: int, num_workers: int, data_regex: str):
         super().__init__()
         self.data_dir = data_dir
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.data_regex = data_regex
-
-    def prepare_data(self):
-        pass
 
     def setup(self, stage=None):
         train_regex = val_regex = test_regex = ".*"
@@ -57,15 +54,24 @@ class DiffuseDataModule(LightningDataModule):
 
     def train_dataloader(self):
         return DataLoader(
-            dataset=self.train_dataset, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=True
+            dataset=self.train_dataset,
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+            shuffle=True,
         )
 
     def val_dataloader(self):
         return DataLoader(
-            dataset=self.val_dataset, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=False
+            dataset=self.val_dataset,
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+            shuffle=False,
         )
 
     def test_dataloader(self):
         return DataLoader(
-            dataset=self.test_dataset, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=False
+            dataset=self.test_dataset,
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+            shuffle=False,
         )
