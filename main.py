@@ -21,7 +21,6 @@ if __name__ == "__main__":
     modes.add_argument("--bench", action="store_true", help="Benchmark a model")
 
     options = parser.add_argument_group("Script options")
-    options.add_argument("--dataset", required=True, help="location of train, val and test folders")
     options.add_argument("--batch_size", type=int, default=4, help="batch size")
     options.add_argument("--n_channel_input", type=int, default=3, help="number of input channels")
     options.add_argument("--n_channel_output", type=int, default=3, help="number of output channels")
@@ -34,6 +33,9 @@ if __name__ == "__main__":
     options.add_argument("--num_workers", type=int, default=4, help="number of threads for data loader")
     options.add_argument("--data_regex", choices=["vanilla", "positions", "lights", "cameras", "objects"])
     options.add_argument("--ckpt", type=str, help="Checkpoint path")
+
+    (partial, _) = parser.parse_known_args()
+    options.add_argument("--dataset", required=not partial.ckpt, help="location of train, val and test folders")
 
     hparams = parser.parse_args()
     hparams.deterministic = True
