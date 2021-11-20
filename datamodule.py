@@ -48,6 +48,12 @@ class DataModule(LightningDataModule):
             val_regex = f"^(bunny|buddha)_{val_nums}(_{light})?$"
             test_regex = f"^(bunny|buddha)_{test_nums}(_{light})?$"
 
+        # walls
+        if self.data_regex == "walls":
+            train_regex = f"^(bunny|buddha)_{train_nums}(_{light})?$"
+            val_regex = f"^(bunny|buddha)_{val_nums}(_{light})?$"
+            test_regex = f"^(bunny|buddha)_{test_nums}(_{light})?$"
+
         # Assign train/val datasets for use in dataloaders
         if stage == "fit" or stage is None:
             self.train_dataset = DataLoaderHelper(self.data_dir, True, train_regex)

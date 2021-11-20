@@ -31,7 +31,7 @@ if __name__ == "__main__":
     options.add_argument("--beta2", type=float, default=0.999, help="beta2")
     options.add_argument("--lambda_factor", type=int, default=100, help="L1 regularization factor")
     options.add_argument("--num_workers", type=int, default=4, help="number of threads for data loader")
-    options.add_argument("--data_regex", choices=["vanilla", "positions", "lights", "cameras", "objects"])
+    options.add_argument("--data_regex", choices=["vanilla", "positions", "lights", "cameras", "objects", "walls"])
     options.add_argument("--ckpt", type=str, help="Checkpoint path")
 
     (partial, _) = parser.parse_known_args()
