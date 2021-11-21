@@ -52,21 +52,23 @@ class CGan(pl.LightningModule):
         z = torch.cat((albedo, direct, normal, depth), 1)
         fake = self.generator(z)
 
+        target = gt if self.hparams.use_global else indirect
+
         if batch_idx == 0:
             logger = self.logger.experiment
-            ldr_img = to_display(direct, gt, indirect, fake)
+            ldr_img = to_display(direct, gt, indirect, fake, self.hparams.use_global)
             logger.add_image("Train", ldr_img, self.current_epoch)
 
         prediction = self.discriminator(torch.cat((z, fake), 1))
         y = torch.ones(prediction.size(), device=self.device)
 
         with torch.no_grad():
-            self.train_metrics(unnorm(fake), unnorm(indirect))
+            self.train_metrics(unnorm(fake), unnorm(target))
 
         self.log_dict(self.train_metrics, on_step=False, on_epoch=True)
 
         gan_loss = self.gan_loss(prediction, y)
-        l1_loss = self.l1_loss(fake, indirect) * self.hparams.lambda_factor
+        l1_loss = self.l1_loss(fake, target) * self.hparams.lambda_factor
 
         self.log_dict(
             {"Train/gan_loss": gan_loss, "Train/l1_loss": l1_loss},
@@ -81,8 +83,10 @@ class CGan(pl.LightningModule):
         z = torch.cat((albedo, direct, normal, depth), 1)
         fake = self.generator(z)
 
+        target = gt if self.hparams.use_global else indirect
+
         # train on real data
-        real_data = torch.cat((z, indirect), 1)
+        real_data = torch.cat((z, target), 1)
         prediction_real = self.discriminator(real_data)
         y_real = torch.ones(prediction_real.size(), device=self.device)
 
@@ -126,33 +130,35 @@ class CGan(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         albedo, direct, normal, depth, gt, indirect = batch
+        target = gt if self.hparams.use_global else indirect
 
         z = torch.cat((albedo, direct, normal, depth), 1)
         fake = self.generator(z)
 
         if batch_idx % 128 == 0:
             logger = self.logger.experiment
-            ldr_img = to_display(direct, gt, indirect, fake)
+            ldr_img = to_display(direct, gt, indirect, fake, self.hparams.use_global)
             logger.add_image(f"Validation/{batch_idx}", ldr_img, self.current_epoch)
 
         with torch.no_grad():
-            self.val_metrics(unnorm(fake), unnorm(indirect))
+            self.val_metrics(unnorm(fake), unnorm(target))
 
         self.log_dict(self.val_metrics, on_step=False, on_epoch=True)
 
     def test_step(self, batch, batch_idx):
         albedo, direct, normal, depth, gt, indirect = batch
+        target = gt if self.hparams.use_global else indirect
 
         z = torch.cat((albedo, direct, normal, depth), 1)
         fake = self.generator(z)
 
         if batch_idx % 128 == 0:
             logger = self.logger.experiment
-            ldr_img = to_display(direct, gt, indirect, fake)
+            ldr_img = to_display(direct, gt, indirect, fake, self.hparams.use_global)
             logger.add_image(f"Test/{batch_idx}", ldr_img, self.current_epoch)
 
         with torch.no_grad():
-            self.test_metrics(unnorm(fake), unnorm(indirect))
+            self.test_metrics(unnorm(fake), unnorm(target))
 
         self.log_dict(self.test_metrics, on_step=False, on_epoch=True)
 

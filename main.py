@@ -33,6 +33,7 @@ if __name__ == "__main__":
     options.add_argument("--num_workers", type=int, default=4, help="number of threads for data loader")
     options.add_argument("--data_regex", choices=["vanilla", "positions", "lights", "cameras", "objects", "walls"])
     options.add_argument("--ckpt", type=str, help="Checkpoint path")
+    options.add_argument("--use_global", action="store_true", help="Learn global illumination")
 
     (partial, _) = parser.parse_known_args()
     options.add_argument("--dataset", required=not partial.ckpt, help="location of train, val and test folders")
