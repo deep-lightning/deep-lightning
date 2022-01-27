@@ -12,7 +12,7 @@ from models.discriminator import Discriminator
 from torchmetrics import MetricCollection, MeanSquaredError, PSNR
 from metrics.ssim import SSIM
 
-from utils import unnorm
+from utils import denormalize
 
 
 class CGan(pl.LightningModule):
@@ -63,7 +63,7 @@ class CGan(pl.LightningModule):
         y = torch.ones(prediction.size(), device=self.device)
 
         with torch.no_grad():
-            self.train_metrics(unnorm(fake), unnorm(target))
+            self.train_metrics(denormalize(fake), denormalize(target))
 
         self.log_dict(self.train_metrics, on_step=False, on_epoch=True)
 
@@ -141,7 +141,7 @@ class CGan(pl.LightningModule):
             logger.add_image(f"Validation/{batch_idx}", ldr_img, self.current_epoch)
 
         with torch.no_grad():
-            self.val_metrics(unnorm(fake), unnorm(target))
+            self.val_metrics(denormalize(fake), denormalize(target))
 
         self.log_dict(self.val_metrics, on_step=False, on_epoch=True)
 
@@ -158,7 +158,7 @@ class CGan(pl.LightningModule):
             logger.add_image(f"Test/{batch_idx}", ldr_img, self.current_epoch)
 
         with torch.no_grad():
-            self.test_metrics(unnorm(fake), unnorm(target))
+            self.test_metrics(denormalize(fake), denormalize(target))
 
         self.log_dict(self.test_metrics, on_step=False, on_epoch=True)
 

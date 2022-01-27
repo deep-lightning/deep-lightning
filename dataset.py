@@ -2,6 +2,7 @@ import random
 from os import listdir
 from os.path import join, isfile
 from enum import Enum
+from pathlib import Path
 
 from torch.utils.data import Dataset
 from torchvision import transforms
@@ -10,9 +11,6 @@ import torchvision.transforms.functional as TF
 import re
 import cv2
 import torch
-
-from pathlib import Path
-from functools import partial
 import utils
 
 
@@ -44,17 +42,12 @@ class DataLoaderHelper(Dataset):
             if cond.match(folder) and RequiredImgs.present_in(path):
                 self.valid_folders.append(path)
 
-    def __getitem__(self, index):
+        transform = [
+            transforms.Resize((256, 256)),
+            transforms.Lambda(utils.hdr2ldr),
+            utils.normalize,
+        ]
 
-        item_folder = Path(self.valid_folders[index])
-        result_dict = {}
-        for img in RequiredImgs:
-            image = cv2.imread(str((item_folder / img.value).resolve()), flags=cv2.IMREAD_ANYDEPTH)
-            image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-            image_torch = torch.from_numpy(image_rgb).permute(2, 0, 1)
-            result_dict[img] = image_torch
-
-        transform = []
         if self.is_train:
             if random.random() > 0.5:  # Random horizontal flipping
                 transform.append(transforms.Lambda(TF.hflip))
@@ -62,23 +55,17 @@ class DataLoaderHelper(Dataset):
             if random.random() > 0.5:  # Random vertical flipping
                 transform.append(transforms.Lambda(TF.vflip))
 
+        self.transform = transforms.Compose(transform)
+
+    def __getitem__(self, index):
+
         result = []
         for img in RequiredImgs:
-            if img in (RequiredImgs.DIRECT, RequiredImgs.INDIRECT, RequiredImgs.GT):
-                max_light = result_dict[RequiredImgs.GT].max()
-            else:
-                max_light = result_dict[img].max()
-
-            per_transform = list(transform)
-            per_transform.extend(
-                [
-                    transforms.Resize((256, 256)),
-                    transforms.Lambda(partial(utils.hdr2ldr, max_light)),
-                    utils.norm,
-                ]
-            )
-            composition = transforms.Compose(per_transform)
-            result.append(composition(result_dict[img]))
+            path = Path(self.valid_folders[index], img.value)
+            image = cv2.imread(str(path.resolve()), flags=cv2.IMREAD_ANYDEPTH)
+            image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            image_torch = torch.from_numpy(image_rgb).permute(2, 0, 1)
+            result.append(self.transform(image_torch))
         return result
 
     def __len__(self):

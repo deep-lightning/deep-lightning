@@ -20,42 +20,35 @@ mean = torch.tensor([0.5, 0.5, 0.5])
 std = torch.tensor([0.5, 0.5, 0.5])
 
 # normalize image in range [0,1] to [-1,1]
-norm = transforms.Normalize(mean.tolist(), std.tolist())
+normalize = transforms.Normalize(mean.tolist(), std.tolist())
 
 # normalize image in range [-1,1] to [0,1]
-unnorm = transforms.Normalize((-mean / std).tolist(), (1.0 / std).tolist())
+denormalize = transforms.Normalize((-mean / std).tolist(), (1.0 / std).tolist())
 
 
-def hdr2ldr(max_light, image):
-    """Applies Reinhard TMO based on http://www.cmap.polytechnique.fr/~peyre/cours/x2005signal/hdr_photographic.pdf"""
-    return (image * (1 + image / (max_light ** 2))) / (1 + image)
+def hdr2ldr(image):
+    """Scales image from range [0, infinity] to [0,1]"""
+    return image / (1 + image)
 
 
-def ldr2hdr(max_light, image):
-    """Reverts Reinhard TMO based on https://www.wolframalpha.com/input/?i=inverse+of+f%28x%29+%3D+%28x*%281%2Bx%2Fa%5E2%29%29%2F%281%2Bx%29"""
-    return 0.5 * ((max_light ** 2) * image - (max_light ** 2)) + 0.5 * (
-        (
-            (max_light ** 2)
-            * ((max_light ** 2) * (image ** 2) - 2 * (max_light ** 2) * image + (max_light ** 2) + 4 * image)
-        )
-        ** 0.5
-    )
+def ldr2hdr(image):
+    """Scales image from range [0,1] to [0, infinity]"""
+    return image / (1 - image)
 
 
 def to_display(
     direct: torch.Tensor, gt: torch.Tensor, indirect: torch.Tensor, fake: torch.Tensor, use_global: bool = False
 ):
 
-    direct_un = unnorm(direct)
-    gt_un = unnorm(gt)
-    indirect_un = unnorm(indirect)
-    fake_un = unnorm(fake)
+    direct_un = denormalize(direct)
+    gt_un = denormalize(gt)
+    indirect_un = denormalize(indirect)
+    fake_un = denormalize(fake)
 
-    max_light = gt_un.amax(dim=(1, 2, 3)).reshape(-1, 1, 1, 1)
-    direct_untoned = ldr2hdr(max_light, direct_un)
-    gt_untoned = ldr2hdr(max_light, gt_un)
-    indirect_untoned = ldr2hdr(max_light, indirect_un)
-    fake_untoned = ldr2hdr(max_light, fake_un)
+    direct_untoned = ldr2hdr(direct_un)
+    gt_untoned = ldr2hdr(gt_un)
+    indirect_untoned = ldr2hdr(indirect_un)
+    fake_untoned = ldr2hdr(fake_un)
 
     fake_gt = fake_untoned + direct_untoned
     real_gt = indirect_untoned + direct_untoned
@@ -66,6 +59,6 @@ def to_display(
     else:
         diff = torch.abs(indirect_untoned - fake_untoned)
         batch = torch.cat((fake_untoned, indirect_untoned, diff, fake_gt, real_gt, gt_untoned), 3)
-    rein = hdr2ldr(max_light, batch)
-    gamma_rein = (rein ** (1 / 2.2)).clip(0, 1)
-    return torchvision.utils.make_grid(gamma_rein, nrow=1)
+    batch_hdr = hdr2ldr(batch)
+    gamma_batch = (batch_hdr ** (1 / 2.2)).clip(0, 1)
+    return torchvision.utils.make_grid(gamma_batch, nrow=1)
