@@ -1,5 +1,6 @@
 import time
 from argparse import ArgumentParser, Namespace
+import cv2
 
 import torch
 import pytorch_lightning as pl
@@ -7,6 +8,9 @@ from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 
 from core import CGan
 from datamodule import DataModule
+import utils
+
+from torchvision import transforms
 
 if __name__ == "__main__":
     pl.seed_everything(42, workers=True)
@@ -19,6 +23,7 @@ if __name__ == "__main__":
     modes.add_argument("--train", action="store_true", help="Train a model")
     modes.add_argument("--test", action="store_true", help="Test a model")
     modes.add_argument("--bench", action="store_true", help="Benchmark a model")
+    modes.add_argument("--predict", action="store_true", help="Make a prediction")
 
     options = parser.add_argument_group("Script options")
     options.add_argument("--batch_size", type=int, default=4, help="batch size")
@@ -34,6 +39,12 @@ if __name__ == "__main__":
     options.add_argument("--data_regex", choices=["vanilla", "positions", "lights", "cameras", "objects", "walls"])
     options.add_argument("--ckpt", type=str, help="Checkpoint path")
     options.add_argument("--use_global", action="store_true", help="Learn global illumination")
+
+    inference = parser.add_argument_group("Script inference")
+    inference.add_argument("--diffuse", type=str, help="path to diffuse")
+    inference.add_argument("--local", type=str, help="path to local")
+    inference.add_argument("--normal", type=str, help="path to normal")
+    inference.add_argument("--depth", type=str, help="path to depth")
 
     (partial, _) = parser.parse_known_args()
     options.add_argument("--dataset", required=not partial.ckpt, help="location of train, val and test folders")
@@ -66,6 +77,41 @@ if __name__ == "__main__":
     new_hparams = Namespace(**model.hparams)
 
     data = DataModule(new_hparams.dataset, new_hparams.batch_size, new_hparams.num_workers, new_hparams.data_regex)
+
+    if new_hparams.predict:
+
+        def get_image(path):
+            image = cv2.imread(path, flags=cv2.IMREAD_ANYDEPTH)
+            image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            image_torch = torch.from_numpy(image_rgb).permute(2, 0, 1)
+
+            transform = transforms.Compose(
+                [
+                    transforms.Resize((256, 256)),
+                    transforms.Lambda(utils.hdr2ldr),
+                    utils.normalize,
+                ]
+            )
+            return transform(image_torch).unsqueeze(0)
+
+        # load input images
+        diffuse = get_image(new_hparams.diffuse)
+        local = get_image(new_hparams.local)
+        normal = get_image(new_hparams.normal)
+        depth = get_image(new_hparams.depth)
+
+        # concatenate them
+        z = torch.cat((diffuse, local, normal, depth), 1)
+
+        # call predict
+        model.eval()
+        output = model.generator(z)
+        output = utils.ldr2hdr(utils.denormalize(output))
+
+        # save output
+        image_torch_final = (output[0].permute(1, 2, 0)).detach().cpu().numpy()
+        image_bgr = cv2.cvtColor(image_torch_final, cv2.COLOR_RGB2BGR)
+        cv2.imwrite("output.hdr", image_bgr)
 
     print(new_hparams)
 
