@@ -10,6 +10,7 @@ from models.generator import Generator
 from models.discriminator import Discriminator
 
 from torchmetrics import MetricCollection, MeanSquaredError, PSNR
+from torchmetrics.functional import ssim, mean_squared_error, psnr
 from metrics.ssim import SSIM
 
 from utils import denormalize
@@ -140,6 +141,20 @@ class CGan(pl.LightningModule):
             ldr_img = to_display(direct, gt, indirect, fake, self.hparams.use_global)
             logger.add_image(f"Validation/{batch_idx}", ldr_img, self.current_epoch)
 
+            met_ssim = ssim(denormalize(fake), denormalize(target), reduction="none", data_range=1)
+            for i in range(len(target)):
+                met_psnr = psnr(denormalize(fake[i]), denormalize(target[i]), data_range=1)
+                met_mse = mean_squared_error(denormalize(fake[i]), denormalize(target[i]))
+
+                logger.add_text(
+                    f"Validation/{batch_idx}_{i}",
+                    (
+                        f"* ssim: {met_ssim[i].mean().cpu().item()}\n"
+                        f"* psnr: {met_psnr.mean().cpu().item()}\n"
+                        f"* mse: {met_mse.mean().cpu().item()}\n"
+                    ),
+                    self.current_epoch,
+                )
         with torch.no_grad():
             self.val_metrics(denormalize(fake), denormalize(target))
 
