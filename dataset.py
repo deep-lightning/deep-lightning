@@ -42,22 +42,22 @@ class DataLoaderHelper(Dataset):
             if cond.match(folder) and RequiredImgs.present_in(path):
                 self.valid_folders.append(path)
 
-        transform = [
+        self.base_transform = [
             transforms.Resize((256, 256)),
             transforms.Lambda(utils.hdr2ldr),
             utils.normalize,
         ]
 
+    def __getitem__(self, index):
+
+        transform = list(self.base_transform)
         if self.is_train:
             if random.random() > 0.5:  # Random horizontal flipping
                 transform.append(transforms.Lambda(TF.hflip))
 
             if random.random() > 0.5:  # Random vertical flipping
                 transform.append(transforms.Lambda(TF.vflip))
-
-        self.transform = transforms.Compose(transform)
-
-    def __getitem__(self, index):
+        transform = transforms.Compose(transform)
 
         result = []
         for img in RequiredImgs:
@@ -65,7 +65,7 @@ class DataLoaderHelper(Dataset):
             image = cv2.imread(str(path.resolve()), flags=cv2.IMREAD_ANYDEPTH)
             image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
             image_torch = torch.from_numpy(image_rgb).permute(2, 0, 1)
-            result.append(self.transform(image_torch))
+            result.append(transform(image_torch))
         return result
 
     def __len__(self):

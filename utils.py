@@ -39,26 +39,28 @@ def ldr2hdr(image):
 def to_display(
     direct: torch.Tensor, gt: torch.Tensor, indirect: torch.Tensor, fake: torch.Tensor, use_global: bool = False
 ):
-
-    direct_un = denormalize(direct)
     gt_un = denormalize(gt)
-    indirect_un = denormalize(indirect)
     fake_un = denormalize(fake)
 
-    direct_untoned = ldr2hdr(direct_un)
     gt_untoned = ldr2hdr(gt_un)
-    indirect_untoned = ldr2hdr(indirect_un)
     fake_untoned = ldr2hdr(fake_un)
-
-    fake_gt = fake_untoned + direct_untoned
-    real_gt = indirect_untoned + direct_untoned
 
     if use_global:
         diff = torch.abs(gt_untoned - fake_untoned)
         batch = torch.cat((fake_untoned, gt_untoned, diff), 3)
     else:
+        direct_un = denormalize(direct)
+        indirect_un = denormalize(indirect)
+
+        direct_untoned = ldr2hdr(direct_un)
+        indirect_untoned = ldr2hdr(indirect_un)
+
+        fake_gt = fake_untoned + direct_untoned
+        real_gt = indirect_untoned + direct_untoned
+
         diff = torch.abs(indirect_untoned - fake_untoned)
         batch = torch.cat((fake_untoned, indirect_untoned, diff, fake_gt, real_gt, gt_untoned), 3)
+
     batch_hdr = hdr2ldr(batch)
     gamma_batch = (batch_hdr ** (1 / 2.2)).clip(0, 1)
     return torchvision.utils.make_grid(gamma_batch, nrow=1)
