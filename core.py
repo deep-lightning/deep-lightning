@@ -21,15 +21,17 @@ class CGan(pl.LightningModule):
         super().__init__()
         self.save_hyperparameters()
 
+        multiplier = 1 if self.hparams.local_buffer_only else 4
+
         self.generator = Generator(
-            self.hparams.n_channel_input * 4,
+            self.hparams.n_channel_input * multiplier,
             self.hparams.n_channel_output,
             self.hparams.n_generator_filters,
         )
         self.generator.apply(weights_init)
 
         self.discriminator = Discriminator(
-            self.hparams.n_channel_input * 4,
+            self.hparams.n_channel_input * multiplier,
             self.hparams.n_channel_output,
             self.hparams.n_discriminator_filters,
         )
@@ -50,7 +52,7 @@ class CGan(pl.LightningModule):
 
     def generator_loss(self, albedo, direct, normal, depth, gt, indirect, batch_idx) -> torch.Tensor:
 
-        z = torch.cat((albedo, direct, normal, depth), 1)
+        z = direct if self.hparams.local_buffer_only else torch.cat((albedo, direct, normal, depth), 1)
         fake = self.generator(z)
 
         target = gt if self.hparams.use_global else indirect
@@ -81,7 +83,7 @@ class CGan(pl.LightningModule):
 
     def discriminator_loss(self, albedo, direct, normal, depth, gt, indirect) -> torch.Tensor:
 
-        z = torch.cat((albedo, direct, normal, depth), 1)
+        z = direct if self.hparams.local_buffer_only else torch.cat((albedo, direct, normal, depth), 1)
         fake = self.generator(z)
 
         target = gt if self.hparams.use_global else indirect
@@ -133,7 +135,7 @@ class CGan(pl.LightningModule):
         albedo, direct, normal, depth, gt, indirect = batch
         target = gt if self.hparams.use_global else indirect
 
-        z = torch.cat((albedo, direct, normal, depth), 1)
+        z = direct if self.hparams.local_buffer_only else torch.cat((albedo, direct, normal, depth), 1)
         fake = self.generator(z)
 
         if batch_idx % 128 == 0:
@@ -164,7 +166,7 @@ class CGan(pl.LightningModule):
         albedo, direct, normal, depth, gt, indirect = batch
         target = gt if self.hparams.use_global else indirect
 
-        z = torch.cat((albedo, direct, normal, depth), 1)
+        z = direct if self.hparams.local_buffer_only else torch.cat((albedo, direct, normal, depth), 1)
         fake = self.generator(z)
 
         if batch_idx % 128 == 0:

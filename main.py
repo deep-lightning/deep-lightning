@@ -39,6 +39,7 @@ if __name__ == "__main__":
     options.add_argument("--data_regex", choices=["vanilla", "positions", "lights", "cameras", "objects", "walls"])
     options.add_argument("--ckpt", type=str, help="Checkpoint path")
     options.add_argument("--use_global", action="store_true", help="Learn global illumination")
+    options.add_argument("--local_buffer_only", action="store_true", help="Use only local buffer as input")
 
     inference = parser.add_argument_group("Script inference")
     inference.add_argument("--diffuse", type=str, help="path to diffuse")
