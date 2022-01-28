@@ -11,6 +11,16 @@ class DataModule(LightningDataModule):
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.data_regex = data_regex
+        self.light = "(up|down|back|left|right)"
+
+    def buildPositionsRegex(self, nums):
+        return f"^(bunny|buddha|cube|dragon|sphere)_{nums}(_{self.light})?$"
+
+    def buildBunnyBuddhaRegex(self, nums):
+        return f"^(bunny|buddha)_{nums}(_{self.light})?$"
+
+    def buildCubeSphereRegex(self, nums):
+        return f"^cube_sphere_{nums}_(horizontal|vertical)(_{self.light})?$"
 
     def setup(self, stage=None):
         train_regex = val_regex = test_regex = ".*"
@@ -18,7 +28,6 @@ class DataModule(LightningDataModule):
         train_nums = "([0-9]?[0-9]?[0-9]|1[0-1][0-9][0-9])"
         val_nums = "(1[2-5][0-9][0-9])"
         test_nums = "(1[6-9][0-9][0-9])"
-        light = "(up|down|back|left|right)"
 
         if self.data_regex == "vanilla":
             train_regex = "^(cube|sphere|dragon)_.*$"
@@ -26,33 +35,21 @@ class DataModule(LightningDataModule):
             test_regex = "^buddha_.*$"
 
         if self.data_regex == "positions":
-            train_regex = f"^(bunny|buddha|cube|dragon|sphere)_{train_nums}(_{light})?$"
-            val_regex = f"^(bunny|buddha|cube|dragon|sphere)_{val_nums}(_{light})?$"
-            test_regex = f"^(bunny|buddha|cube|dragon|sphere)_{test_nums}(_{light})?$"
+            train_regex = self.buildPositionsRegex(train_nums)
+            val_regex = self.buildPositionsRegex(val_nums)
+            test_regex = self.buildPositionsRegex(test_nums)
 
-        # multiple lights
-        if self.data_regex == "lights":
-            train_regex = f"^(bunny|buddha)_{train_nums}(_{light})?$"
-            val_regex = f"^(bunny|buddha)_{val_nums}(_{light})?$"
-            test_regex = f"^(bunny|buddha)_{test_nums}(_{light})?$"
+        # multiple cameras, multiple lights or walls
+        if self.data_regex in {"cameras", "lights", "walls"}:
+            train_regex = self.buildBunnyBuddhaRegex(train_nums)
+            val_regex = self.buildBunnyBuddhaRegex(val_nums)
+            test_regex = self.buildBunnyBuddhaRegex(test_nums)
 
         # cube and sphere
         if self.data_regex == "objects":
-            train_regex = f"^cube_sphere_{train_nums}_(horizontal|vertical)(_{light})?$"
-            val_regex = f"^cube_sphere_{val_nums}_(horizontal|vertical)(_{light})?$"
-            test_regex = f"^cube_sphere_{test_nums}_(horizontal|vertical)(_{light})?$"
-
-        # multiple cameras
-        if self.data_regex == "cameras":
-            train_regex = f"^(bunny|buddha)_{train_nums}(_{light})?$"
-            val_regex = f"^(bunny|buddha)_{val_nums}(_{light})?$"
-            test_regex = f"^(bunny|buddha)_{test_nums}(_{light})?$"
-
-        # walls
-        if self.data_regex == "walls":
-            train_regex = f"^(bunny|buddha)_{train_nums}(_{light})?$"
-            val_regex = f"^(bunny|buddha)_{val_nums}(_{light})?$"
-            test_regex = f"^(bunny|buddha)_{test_nums}(_{light})?$"
+            train_regex = self.buildCubeSphereRegex(train_nums)
+            val_regex = self.buildCubeSphereRegex(val_nums)
+            test_regex = self.buildCubeSphereRegex(test_nums)
 
         # Assign train/val datasets for use in dataloaders
         if stage == "fit" or stage is None:
