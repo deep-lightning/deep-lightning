@@ -47,6 +47,12 @@ class CGan(pl.LightningModule):
         self.val_metrics = metrics.clone(prefix="Validation/")
         self.test_metrics = metrics.clone(prefix="Test/")
 
+        self.best_val = None
+        self.best_val_ssim = 0
+
+        self.worst_val = None
+        self.worst_val_ssim = float("inf")
+
     def forward(self, x):
         return self.generator(x)
 
@@ -138,6 +144,16 @@ class CGan(pl.LightningModule):
         z = direct if self.hparams.local_buffer_only else torch.cat((albedo, direct, normal, depth), 1)
         fake = self.generator(z)
 
+        individual_ssim = ssim(denormalize(fake), denormalize(target), reduction="none", data_range=1).mean(dim=0)
+        max_ssim = individual_ssim.max()
+        min_ssim = individual_ssim.min()
+        if max_ssim > self.best_val_ssim:
+            self.best_val_ssim = max_ssim
+            self.best_val = (direct, gt, indirect, fake, target)
+        if min_ssim < self.worst_val_ssim:
+            self.worst_val_ssim = min_ssim
+            self.worst_val = (direct, gt, indirect, fake, target)
+
         if batch_idx % 128 == 0:
             logger = self.logger.experiment
             ldr_img = to_display(direct, gt, indirect, fake, self.hparams.use_global)
@@ -157,10 +173,56 @@ class CGan(pl.LightningModule):
                     ),
                     self.current_epoch,
                 )
+
         with torch.no_grad():
             self.val_metrics(denormalize(fake), denormalize(target))
 
         self.log_dict(self.val_metrics, on_step=False, on_epoch=True)
+
+    def validation_epoch_end(self, outputs) -> None:
+
+        direct, gt, indirect, fake, target = self.best_val
+
+        logger = self.logger.experiment
+        ldr_img = to_display(direct, gt, indirect, fake, self.hparams.use_global)
+        logger.add_image(f"Validation/best_sample", ldr_img, self.current_epoch)
+
+        met_ssim = ssim(denormalize(fake), denormalize(target), reduction="none", data_range=1)
+        for i in range(len(target)):
+            met_psnr = psnr(denormalize(fake[i]), denormalize(target[i]), data_range=1)
+            met_mse = mean_squared_error(denormalize(fake[i]), denormalize(target[i]))
+
+            logger.add_text(
+                f"Validation/best_sample_{i}",
+                (
+                    f"* ssim: {met_ssim[i].mean().cpu().item()}\n"
+                    f"* psnr: {met_psnr.mean().cpu().item()}\n"
+                    f"* mse: {met_mse.mean().cpu().item()}\n"
+                ),
+                self.current_epoch,
+            )
+
+        direct, gt, indirect, fake, target = self.worst_val
+
+        ldr_img = to_display(direct, gt, indirect, fake, self.hparams.use_global)
+        logger.add_image(f"Validation/worst_sample", ldr_img, self.current_epoch)
+
+        met_ssim = ssim(denormalize(fake), denormalize(target), reduction="none", data_range=1)
+        for i in range(len(target)):
+            met_psnr = psnr(denormalize(fake[i]), denormalize(target[i]), data_range=1)
+            met_mse = mean_squared_error(denormalize(fake[i]), denormalize(target[i]))
+
+            logger.add_text(
+                f"Validation/worst_sample_{i}",
+                (
+                    f"* ssim: {met_ssim[i].mean().cpu().item()}\n"
+                    f"* psnr: {met_psnr.mean().cpu().item()}\n"
+                    f"* mse: {met_mse.mean().cpu().item()}\n"
+                ),
+                self.current_epoch,
+            )
+
+        return super().validation_epoch_end(outputs)
 
     def test_step(self, batch, batch_idx):
         albedo, direct, normal, depth, gt, indirect = batch
