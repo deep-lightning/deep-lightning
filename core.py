@@ -4,7 +4,7 @@ import pytorch_lightning as pl
 from torch import nn
 from torch.optim import Adam
 
-from utils import to_display, weights_init
+from utils import to_display, weights_init, ldr2hdr, hdr2ldr
 
 from models.generator import Generator
 from models.discriminator import Discriminator
@@ -46,6 +46,7 @@ class CGan(pl.LightningModule):
         self.train_metrics = metrics.clone(prefix="Train/")
         self.val_metrics = metrics.clone(prefix="Validation/")
         self.test_metrics = metrics.clone(prefix="Test/")
+        self.test_metrics_global = metrics.clone(prefix="Test_global/")
 
         self.best_val = None
         self.best_val_ssim = 0
@@ -238,8 +239,19 @@ class CGan(pl.LightningModule):
 
         with torch.no_grad():
             self.test_metrics(denormalize(fake), denormalize(target))
+            self.log_dict(self.test_metrics, on_step=False, on_epoch=True)
 
-        self.log_dict(self.test_metrics, on_step=False, on_epoch=True)
+            if not self.hparams.use_global:
+                fake_un = denormalize(fake)
+                direct_un = denormalize(direct)
+
+                fake_untoned = ldr2hdr(fake_un)
+                direct_untoned = ldr2hdr(direct_un)
+
+                fake_gt = fake_untoned + direct_untoned
+
+                self.test_metrics_global(hdr2ldr(fake_gt), denormalize(gt))
+                self.log_dict(self.test_metrics_global, on_step=False, on_epoch=True)
 
     def configure_optimizers(self):
         betas = (self.hparams.beta1, self.hparams.beta2)
