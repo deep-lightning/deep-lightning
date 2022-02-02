@@ -3,6 +3,7 @@ import pytorch_lightning as pl
 
 from torch import nn
 from torch.optim import Adam
+from metrics.tracker import Tracker
 
 from utils import to_display, weights_init, ldr2hdr, hdr2ldr
 
@@ -48,11 +49,8 @@ class CGan(pl.LightningModule):
         self.test_metrics = metrics.clone(prefix="Test/")
         self.test_metrics_global = metrics.clone(prefix="Test_global/")
 
-        self.best_val = None
-        self.best_val_ssim = 0
-
-        self.worst_val = None
-        self.worst_val_ssim = float("inf")
+        self.val_tracker = Tracker()
+        self.test_tracker = Tracker()
 
     def forward(self, x):
         return self.generator(x)
@@ -145,82 +143,44 @@ class CGan(pl.LightningModule):
         z = direct if self.hparams.local_buffer_only else torch.cat((albedo, direct, normal, depth), 1)
         fake = self.generator(z)
 
-        individual_ssim = ssim(denormalize(fake), denormalize(target), reduction="none", data_range=1).mean(dim=0)
-        max_ssim = individual_ssim.max()
-        min_ssim = individual_ssim.min()
-        if max_ssim > self.best_val_ssim:
-            self.best_val_ssim = max_ssim
-            self.best_val = (direct, gt, indirect, fake, target)
-        if min_ssim < self.worst_val_ssim:
-            self.worst_val_ssim = min_ssim
-            self.worst_val = (direct, gt, indirect, fake, target)
+        per_image_ssim = torch.mean(
+            ssim(denormalize(fake), denormalize(target), reduction="none", data_range=1), dim=(1, 2, 3)
+        )
+
+        with torch.no_grad():
+            self.val_tracker(per_image_ssim, (direct, gt, indirect, fake, target))
+            self.val_metrics(denormalize(fake), denormalize(target))
 
         if batch_idx % 128 == 0:
             logger = self.logger.experiment
             ldr_img = to_display(direct, gt, indirect, fake, self.hparams.use_global)
             logger.add_image(f"Validation/{batch_idx}", ldr_img, self.current_epoch)
 
-            met_ssim = ssim(denormalize(fake), denormalize(target), reduction="none", data_range=1)
-            for i in range(len(target)):
-                met_psnr = psnr(denormalize(fake[i]), denormalize(target[i]), data_range=1)
-                met_mse = mean_squared_error(denormalize(fake[i]), denormalize(target[i]))
-
-                logger.add_text(
-                    f"Validation/{batch_idx}_{i}",
-                    (
-                        f"* ssim: {met_ssim[i].mean().cpu().item()}\n"
-                        f"* psnr: {met_psnr.mean().cpu().item()}\n"
-                        f"* mse: {met_mse.mean().cpu().item()}\n"
-                    ),
-                    self.current_epoch,
-                )
-
-        with torch.no_grad():
-            self.val_metrics(denormalize(fake), denormalize(target))
-
         self.log_dict(self.val_metrics, on_step=False, on_epoch=True)
 
     def validation_epoch_end(self, outputs) -> None:
 
-        direct, gt, indirect, fake, target = self.best_val
+        stats = self.val_tracker.compute()
+        self.val_tracker.reset()
 
-        logger = self.logger.experiment
-        ldr_img = to_display(direct, gt, indirect, fake, self.hparams.use_global)
-        logger.add_image(f"Validation/best_sample", ldr_img, self.current_epoch)
+        for x in ("best", "worst"):
+            direct, gt, indirect, fake, target = stats[f"{x}_buffers"]
 
-        met_ssim = ssim(denormalize(fake), denormalize(target), reduction="none", data_range=1)
-        for i in range(len(target)):
-            met_psnr = psnr(denormalize(fake[i]), denormalize(target[i]), data_range=1)
-            met_mse = mean_squared_error(denormalize(fake[i]), denormalize(target[i]))
+            logger = self.logger.experiment
+            ldr_img = to_display(direct, gt, indirect, fake, self.hparams.use_global)
+            logger.add_image(f"Validation/{x}_sample", ldr_img, self.current_epoch)
 
-            logger.add_text(
-                f"Validation/best_sample_{i}",
-                (
-                    f"* ssim: {met_ssim[i].mean().cpu().item()}\n"
-                    f"* psnr: {met_psnr.mean().cpu().item()}\n"
-                    f"* mse: {met_mse.mean().cpu().item()}\n"
-                ),
-                self.current_epoch,
-            )
+            sample_psnr = psnr(denormalize(fake), denormalize(target), data_range=1)
+            sample_mse = mean_squared_error(denormalize(fake), denormalize(target))
 
-        direct, gt, indirect, fake, target = self.worst_val
-
-        ldr_img = to_display(direct, gt, indirect, fake, self.hparams.use_global)
-        logger.add_image(f"Validation/worst_sample", ldr_img, self.current_epoch)
-
-        met_ssim = ssim(denormalize(fake), denormalize(target), reduction="none", data_range=1)
-        for i in range(len(target)):
-            met_psnr = psnr(denormalize(fake[i]), denormalize(target[i]), data_range=1)
-            met_mse = mean_squared_error(denormalize(fake[i]), denormalize(target[i]))
-
-            logger.add_text(
-                f"Validation/worst_sample_{i}",
-                (
-                    f"* ssim: {met_ssim[i].mean().cpu().item()}\n"
-                    f"* psnr: {met_psnr.mean().cpu().item()}\n"
-                    f"* mse: {met_mse.mean().cpu().item()}\n"
-                ),
-                self.current_epoch,
+            self.log_dict(
+                {
+                    f"Validation_sample/{x}_ssim": stats[f"{x}_value"],
+                    f"Validation_sample/{x}_psnr": sample_psnr,
+                    f"Validation_sample/{x}_mse": sample_mse,
+                },
+                on_step=False,
+                on_epoch=True,
             )
 
         return super().validation_epoch_end(outputs)
@@ -232,12 +192,17 @@ class CGan(pl.LightningModule):
         z = direct if self.hparams.local_buffer_only else torch.cat((albedo, direct, normal, depth), 1)
         fake = self.generator(z)
 
+        per_image_ssim = torch.mean(
+            ssim(denormalize(fake), denormalize(target), reduction="none", data_range=1), dim=(1, 2, 3)
+        )
+
         if batch_idx % 128 == 0:
             logger = self.logger.experiment
             ldr_img = to_display(direct, gt, indirect, fake, self.hparams.use_global)
             logger.add_image(f"Test/{batch_idx}", ldr_img, self.current_epoch)
 
         with torch.no_grad():
+            self.test_tracker(per_image_ssim, (direct, gt, indirect, fake, target))
             self.test_metrics(denormalize(fake), denormalize(target))
             self.log_dict(self.test_metrics, on_step=False, on_epoch=True)
 
@@ -252,6 +217,33 @@ class CGan(pl.LightningModule):
 
                 self.test_metrics_global(hdr2ldr(fake_gt), denormalize(gt))
                 self.log_dict(self.test_metrics_global, on_step=False, on_epoch=True)
+
+    def test_epoch_end(self, outputs) -> None:
+
+        stats = self.test_tracker.compute()
+        self.test_tracker.reset()
+
+        for x in ("best", "worst"):
+            direct, gt, indirect, fake, target = stats[f"{x}_buffers"]
+
+            logger = self.logger.experiment
+            ldr_img = to_display(direct, gt, indirect, fake, self.hparams.use_global)
+            logger.add_image(f"Test/{x}_sample", ldr_img, self.current_epoch)
+
+            sample_psnr = psnr(denormalize(fake), denormalize(target), data_range=1)
+            sample_mse = mean_squared_error(denormalize(fake), denormalize(target))
+
+            self.log_dict(
+                {
+                    f"Test_sample/{x}_ssim": stats[f"{x}_value"],
+                    f"Test_sample/{x}_psnr": sample_psnr,
+                    f"Test_sample/{x}_mse": sample_mse,
+                },
+                on_step=False,
+                on_epoch=True,
+            )
+
+        return super().test_epoch_end(outputs)
 
     def configure_optimizers(self):
         betas = (self.hparams.beta1, self.hparams.beta2)

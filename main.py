@@ -55,10 +55,12 @@ if __name__ == "__main__":
 
     callbacks = [
         ModelCheckpoint(
-            monitor="Validation/psnr",
+            monitor="Validation/ssim",
             mode="max",
+            save_top_k=5,
+            every_n_epochs=50,
             auto_insert_metric_name=False,
-            filename="psnr_epoch={epoch:02d}-psnr={Validation/psnr:.4f}-ssim={Validation/ssim:.4f}-mse={Validation/mse:.6f}",
+            filename="ssim_epoch={epoch:02d}-psnr={Validation/psnr:.4f}-ssim={Validation/ssim:.4f}-mse={Validation/mse:.6f}",
         ),
         ModelCheckpoint(
             monitor="Validation/ssim",
