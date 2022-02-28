@@ -69,9 +69,9 @@ class CGan(pl.LightningModule):
     def forward(self, x):
         return self.generator(x)
 
-    def generator_loss(self, albedo, direct, normal, depth, gt, indirect, batch_idx) -> torch.Tensor:
+    def generator_loss(self, diffuse, direct, normal, depth, gt, indirect, batch_idx) -> torch.Tensor:
 
-        z = direct if self.hparams.local_buffer_only else torch.cat((albedo, direct, normal, depth), 1)
+        z = direct if self.hparams.local_buffer_only else torch.cat((diffuse, direct, normal, depth), 1)
         fake = self.generator(z)
 
         target = gt if self.hparams.use_global else indirect
@@ -100,9 +100,9 @@ class CGan(pl.LightningModule):
 
         return gan_loss + l1_loss
 
-    def discriminator_loss(self, albedo, direct, normal, depth, gt, indirect) -> torch.Tensor:
+    def discriminator_loss(self, diffuse, direct, normal, depth, gt, indirect) -> torch.Tensor:
 
-        z = direct if self.hparams.local_buffer_only else torch.cat((albedo, direct, normal, depth), 1)
+        z = direct if self.hparams.local_buffer_only else torch.cat((diffuse, direct, normal, depth), 1)
         fake = self.generator(z)
 
         target = gt if self.hparams.use_global else indirect
@@ -151,10 +151,10 @@ class CGan(pl.LightningModule):
         return result
 
     def validation_step(self, batch, batch_idx):
-        albedo, direct, normal, depth, gt, indirect = batch
+        diffuse, direct, normal, depth, gt, indirect = batch
         target = gt if self.hparams.use_global else indirect
 
-        z = direct if self.hparams.local_buffer_only else torch.cat((albedo, direct, normal, depth), 1)
+        z = direct if self.hparams.local_buffer_only else torch.cat((diffuse, direct, normal, depth), 1)
         fake = self.generator(z)
 
         per_image_ssim = torch.mean(
@@ -200,10 +200,10 @@ class CGan(pl.LightningModule):
         return super().validation_epoch_end(outputs)
 
     def test_step(self, batch, batch_idx):
-        albedo, direct, normal, depth, gt, indirect = batch
+        diffuse, direct, normal, depth, gt, indirect = batch
         target = gt if self.hparams.use_global else indirect
 
-        z = direct if self.hparams.local_buffer_only else torch.cat((albedo, direct, normal, depth), 1)
+        z = direct if self.hparams.local_buffer_only else torch.cat((diffuse, direct, normal, depth), 1)
         fake = self.generator(z)
 
         per_image_ssim = torch.mean(

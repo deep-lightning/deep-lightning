@@ -13,7 +13,9 @@ backcall==0.2.0
 black==22.1.0
     # via -r dev-requirements.in
 click==8.0.4
-    # via black
+    # via
+    #   -c requirements.txt
+    #   black
 decorator==5.1.1
     # via ipython
 executing==0.8.2

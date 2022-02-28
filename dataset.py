@@ -1,31 +1,29 @@
+import re
 import random
-from os import listdir
-from os.path import join, isfile
-from enum import Enum
 from pathlib import Path
+
+import cv2
+import torch
+import torchvision.transforms.functional as TF
 
 from torch.utils.data import Dataset
 from torchvision import transforms
-import torchvision.transforms.functional as TF
 
-import re
-import cv2
-import torch
 import utils
 
+required_images = {
+    "diffuse": "diffuse.hdr",
+    "local": "local.hdr",
+    "normal": "normal.hdr",
+    "depth": "z.hdr",
+    "global": "global.hdr",
+    "indirect": "indirect.hdr",
+}
 
-class RequiredImgs(Enum):
-    ALBEDO = "diffuse.hdr"
-    DIRECT = "local.hdr"
-    NORMAL = "normal.hdr"
-    DEPTH = "z.hdr"
-    GT = "global.hdr"
-    INDIRECT = "indirect.hdr"
 
-    @classmethod
-    def present_in(cls, folder):
-        """Checks if folder contains all required images"""
-        return all(isfile(join(folder, img.value)) for img in cls)
+def all_images_exist(folder: Path):
+    """Checks if folder contains all required images"""
+    return all((folder / img).is_file() for img in required_images.values())
 
 
 class DataLoaderHelper(Dataset):
@@ -37,10 +35,9 @@ class DataLoaderHelper(Dataset):
         cond = re.compile(pattern)
 
         self.valid_folders = []
-        for folder in listdir(root_dir):
-            path = join(root_dir, folder)
-            if cond.match(folder) and RequiredImgs.present_in(path):
-                self.valid_folders.append(path)
+        for folder in Path(root_dir).iterdir():
+            if cond.match(folder.stem) and all_images_exist(folder):
+                self.valid_folders.append(folder)
 
         self.base_transform = [
             transforms.Resize((256, 256)),
@@ -60,8 +57,8 @@ class DataLoaderHelper(Dataset):
         transform = transforms.Compose(transform)
 
         result = []
-        for img in RequiredImgs:
-            path = Path(self.valid_folders[index], img.value)
+        for img in required_images.values():
+            path = self.valid_folders[index] / img
             image = cv2.imread(str(path.resolve()), flags=cv2.IMREAD_ANYDEPTH)
             image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
             image_torch = torch.from_numpy(image_rgb).permute(2, 0, 1)

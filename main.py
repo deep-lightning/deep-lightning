@@ -161,8 +161,8 @@ if __name__ == "__main__":
             while total_time < bench_time:
                 try:
                     start_data = time.perf_counter()
-                    albedo, direct, normal, depth, _, _ = next(items)
-                    z = torch.cat((albedo, direct, normal, depth), 1)
+                    diffuse, direct, normal, depth, _, _ = next(items)
+                    z = torch.cat((diffuse, direct, normal, depth), 1)
                     end_data = time.perf_counter()
                     total_data_time += end_data - start_data
 
@@ -192,8 +192,8 @@ if __name__ == "__main__":
                 while total_time < bench_time:
                     try:
                         start_data = time.perf_counter()
-                        albedo, direct, normal, depth, _, _ = next(items)
-                        z = torch.cat((albedo, direct, normal, depth), 1)
+                        diffuse, direct, normal, depth, _, _ = next(items)
+                        z = torch.cat((diffuse, direct, normal, depth), 1)
                         end_data = time.perf_counter()
                         total_data_time += end_data - start_data
 
