@@ -26,29 +26,35 @@ if __name__ == "__main__":
     modes.add_argument("--predict", action="store_true", help="Make a prediction")
 
     options = parser.add_argument_group("Script options")
-    options.add_argument("--batch_size", type=int, default=4, help="batch size")
-    options.add_argument("--n_channel_input", type=int, default=3, help="number of input channels")
-    options.add_argument("--n_channel_output", type=int, default=3, help="number of output channels")
-    options.add_argument("--n_generator_filters", type=int, default=64, help="num of initial generator filters")
-    options.add_argument("--n_discriminator_filters", type=int, default=64, help="num of initial discriminator filters")
-    options.add_argument("--lr", type=float, default=0.0002, help="learning rate")
-    options.add_argument("--beta1", type=float, default=0.5, help="beta1")
-    options.add_argument("--beta2", type=float, default=0.999, help="beta2")
+    options.add_argument("--batch_size", type=int, default=4, help="Number of samples to use per batch")
+    options.add_argument("--n_channel_input", type=int, default=3, help="Number of input channels")
+    options.add_argument("--n_channel_output", type=int, default=3, help="Number of output channels")
+    options.add_argument("--n_generator_filters", type=int, default=64, help="Number of initial generator filters")
+    options.add_argument(
+        "--n_discriminator_filters", type=int, default=64, help="Number of initial discriminator filters"
+    )
+    options.add_argument("--lr", type=float, default=0.0002, help="Initial learning rate")
+    options.add_argument("--beta1", type=float, default=0.5, help="Adam's beta1")
+    options.add_argument("--beta2", type=float, default=0.999, help="Adam's beta2")
     options.add_argument("--lambda_factor", type=int, default=100, help="L1 regularization factor")
-    options.add_argument("--num_workers", type=int, default=4, help="number of threads for data loader")
-    options.add_argument("--data_regex", choices=["vanilla", "positions", "lights", "cameras", "objects", "walls"])
+    options.add_argument("--num_workers", type=int, default=4, help="Number of subprocesses to use for data loading")
+    options.add_argument(
+        "--data_regex",
+        help="Predefined regex for splitting data",
+        choices=["vanilla", "positions", "cameras", "lights", "walls", "objects"],
+    )
     options.add_argument("--ckpt", type=str, help="Checkpoint path")
     options.add_argument("--use_global", action="store_const", const=True, help="Learn global illumination")
     options.add_argument("--local_buffer_only", action="store_const", const=True, help="Use only local buffer as input")
 
     inference = parser.add_argument_group("Script inference")
-    inference.add_argument("--diffuse", type=str, help="path to diffuse")
-    inference.add_argument("--local", type=str, help="path to local")
-    inference.add_argument("--normal", type=str, help="path to normal")
-    inference.add_argument("--depth", type=str, help="path to depth")
+    inference.add_argument("--diffuse", type=str, help="Path to diffuse")
+    inference.add_argument("--local", type=str, help="Path to local")
+    inference.add_argument("--normal", type=str, help="Path to normal")
+    inference.add_argument("--depth", type=str, help="Path to depth")
 
     (partial, _) = parser.parse_known_args()
-    options.add_argument("--dataset", required=not partial.ckpt, help="location of train, val and test folders")
+    options.add_argument("--dataset", required=not partial.ckpt, help="Folder where the samples are stored")
 
     hparams = parser.parse_args()
     hparams.deterministic = True

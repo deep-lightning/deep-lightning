@@ -19,6 +19,20 @@ from utils import denormalize
 
 class CGan(pl.LightningModule):
     def __init__(self, **kwargs) -> None:
+        """Initialize CGan model
+
+        Expected in kwargs:
+            n_channel_input: Number of input channels
+            n_channel_output: Number of output channels
+            n_generator_filters: Number of initial generator filters
+            n_discriminator_filters: Number of initial discriminator filters
+            lr: Initial learning rate
+            beta1: Adam's beta1
+            beta2: Adam's beta2
+            lambda_factor: L1 regularization factor
+            use_global: Learn global illumination
+            local_buffer_only: Use only local buffer as input
+        """
         super().__init__()
         self.save_hyperparameters()
 

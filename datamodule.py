@@ -5,9 +5,17 @@ from dataset import DataLoaderHelper
 
 
 class DataModule(LightningDataModule):
-    def __init__(self, data_dir: str, batch_size: int, num_workers: int, data_regex: str):
+    def __init__(self, dataset: str, batch_size: int, num_workers: int, data_regex: str):
+        """
+        Args:
+            dataset: Folder where the samples are stored
+            batch_size: Number of samples to use per batch
+            num_workers: Number of subprocesses to use for data loading
+            data_regex: Predefined regex for splitting data.
+                        Available choices: "vanilla", "positions", "cameras", "lights", "walls", "objects"
+        """
         super().__init__()
-        self.data_dir = data_dir
+        self.dataset = dataset
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.data_regex = data_regex
@@ -53,13 +61,13 @@ class DataModule(LightningDataModule):
 
         # Assign train/val datasets for use in dataloaders
         if stage == "fit" or stage is None:
-            self.train_dataset = DataLoaderHelper(self.data_dir, True, train_regex)
-            self.val_dataset = DataLoaderHelper(self.data_dir, False, val_regex)
+            self.train_dataset = DataLoaderHelper(self.dataset, True, train_regex)
+            self.val_dataset = DataLoaderHelper(self.dataset, False, val_regex)
             print(len(self.train_dataset), len(self.val_dataset))
 
         # Assign test dataset for use in dataloader
         if stage == "test" or stage is None:
-            self.test_dataset = DataLoaderHelper(self.data_dir, False, test_regex)
+            self.test_dataset = DataLoaderHelper(self.dataset, False, test_regex)
             print(len(self.test_dataset))
 
     def train_dataloader(self):
