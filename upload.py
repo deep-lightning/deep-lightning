@@ -6,7 +6,7 @@ import cv2
 from pathlib import Path
 from tqdm import tqdm
 
-from dataset import required_images
+from common import required_images
 
 if len(sys.argv) == 3:
     _, source, target = sys.argv

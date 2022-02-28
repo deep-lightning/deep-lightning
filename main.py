@@ -8,7 +8,7 @@ from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 
 from core import CGan
 from datamodule import DataModule
-import utils
+import common
 
 from torchvision import transforms
 
@@ -99,8 +99,8 @@ if __name__ == "__main__":
             transform = transforms.Compose(
                 [
                     transforms.Resize((256, 256)),
-                    transforms.Lambda(utils.hdr2ldr),
-                    utils.normalize,
+                    transforms.Lambda(common.hdr2ldr),
+                    common.normalize,
                 ]
             )
             return transform(image_torch).unsqueeze(0)
@@ -117,7 +117,7 @@ if __name__ == "__main__":
         # call predict
         model.eval()
         output = model.generator(z)
-        output = utils.ldr2hdr(utils.denormalize(output))
+        output = common.ldr2hdr(common.denormalize(output))
 
         # save output
         image_torch_final = (output[0].permute(1, 2, 0)).detach().cpu().numpy()

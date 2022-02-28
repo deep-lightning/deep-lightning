@@ -1,8 +1,36 @@
+from enum import Enum
 import torch
 from torch import nn
 
 import torchvision
 from torchvision import transforms
+
+
+class Stage(Enum):
+    TRAIN = "train"
+    VAL = "val"
+    TEST = "test"
+    PREDICT = "predict"
+
+
+required_images = {
+    "diffuse": "diffuse.hdr",
+    "local": "local.hdr",
+    "normal": "normal.hdr",
+    "depth": "z.hdr",
+    "global": "global.hdr",
+    "indirect": "indirect.hdr",
+}
+
+
+mean = torch.tensor([0.5, 0.5, 0.5])
+std = torch.tensor([0.5, 0.5, 0.5])
+
+# normalize image in range [0,1] to [-1,1]
+normalize = transforms.Normalize(mean.tolist(), std.tolist())
+
+# normalize image in range [-1,1] to [0,1]
+denormalize = transforms.Normalize((-mean / std).tolist(), (1.0 / std).tolist())
 
 
 def weights_init(m):
@@ -14,16 +42,6 @@ def weights_init(m):
     elif classname.find("BatchNorm") != -1:
         nn.init.normal_(m.weight.data, 1.0, 0.02)
         nn.init.constant_(m.bias.data, 0)
-
-
-mean = torch.tensor([0.5, 0.5, 0.5])
-std = torch.tensor([0.5, 0.5, 0.5])
-
-# normalize image in range [0,1] to [-1,1]
-normalize = transforms.Normalize(mean.tolist(), std.tolist())
-
-# normalize image in range [-1,1] to [0,1]
-denormalize = transforms.Normalize((-mean / std).tolist(), (1.0 / std).tolist())
 
 
 def hdr2ldr(image):

@@ -5,7 +5,7 @@ import hub
 import cv2
 from tqdm import tqdm
 
-from dataset import required_images
+from common import required_images
 
 if len(sys.argv) == 2:
     _, source = sys.argv

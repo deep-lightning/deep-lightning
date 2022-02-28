@@ -5,7 +5,7 @@ from torch import nn
 from torch.optim import Adam
 from metrics.tracker import Tracker
 
-from utils import to_display, weights_init, ldr2hdr, hdr2ldr
+from common import to_display, weights_init, ldr2hdr, hdr2ldr, denormalize
 
 from models.generator import Generator
 from models.discriminator import Discriminator
@@ -13,8 +13,6 @@ from models.discriminator import Discriminator
 from torchmetrics import MetricCollection, MeanSquaredError, PSNR
 from torchmetrics.functional import ssim, mean_squared_error, psnr
 from metrics.ssim import SSIM
-
-from utils import denormalize
 
 
 class CGan(pl.LightningModule):
