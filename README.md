@@ -5,9 +5,38 @@
 This project presents a neural network architecture based on cGANs (Conditional Generative Adversarial Networks), which seeks to approximate the indirect illumination of a variety of scenes. It's developed using [Pytorch Lightning](https://www.pytorchlightning.ai/).
 
 This work is based on the project [Deep Illumination](https://github.com/CreativeCodingLab/DeepIllumination).
+
 ### Installation
 
-To install dependencies run `pip install -r requirements.txt`
+1. Create and activate virtual environment
+   ```
+   > python -m venv <name_of_venv>
+   > source <name_of_venv>/bin/activate
+   ```
+2. Inside the virtual environment install `pip-tools`
+   ```
+   > python -m pip install pip-tools
+   ```
+3. Compile production dependencies
+   ```
+   > pip-compile --allow-unsafe
+   ```
+4. (Optional) Compile dev dependencies
+   ```
+   > pip-compile --allow-unsafe dev-requirements.in
+   ```
+5. Install dependencies
+
+   - Only production
+
+     ```
+     > pip-sync
+     ```
+
+   - Both production and dev
+     ```
+     > pip-sync requirements.txt dev-requirements.txt
+     ```
 
 ### Usage
 
@@ -19,5 +48,5 @@ The different datasets were created using [Radiance](https://www.radiance-online
 
 ### Authors
 
-* Julio Morero
-* Cecilia Gutiérrez
+- Julio Morero
+- Cecilia Gutiérrez

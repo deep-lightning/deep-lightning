@@ -1,0 +1,5 @@
+-f https://download.pytorch.org/whl/cu111/torch_stable.html
+pytorch-lightning==1.4.2
+torch==1.9.0+cu111
+torchvision==0.10.0+cu111
+opencv-python
