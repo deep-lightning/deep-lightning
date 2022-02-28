@@ -2,6 +2,7 @@ from pytorch_lightning import LightningDataModule
 from torch.utils.data import DataLoader
 
 from dataset import DataLoaderHelper
+from common import Stage
 
 
 class DataModule(LightningDataModule):
@@ -12,7 +13,7 @@ class DataModule(LightningDataModule):
             batch_size: Number of samples to use per batch
             num_workers: Number of subprocesses to use for data loading
             data_regex: Predefined regex for splitting data.
-                        Available choices: "vanilla", "positions", "cameras", "lights", "walls", "objects"
+                        Available choices: "vanilla", "positions", "cameras", "lights", "walls", "objects", "all"
         """
         super().__init__()
         self.dataset = dataset
@@ -31,11 +32,12 @@ class DataModule(LightningDataModule):
         return f"^cube_sphere_{nums}_(horizontal|vertical)(_{self.light})?$"
 
     def setup(self, stage=None):
-        train_regex = val_regex = test_regex = ".*"
-
         train_nums = "([0-9]?[0-9]?[0-9]|1[0-1][0-9][0-9])"
         val_nums = "(1[2-5][0-9][0-9])"
         test_nums = "(1[6-9][0-9][0-9])"
+
+        if self.data_regex in (None, "all"):
+            train_regex = val_regex = test_regex = ".*"
 
         if self.data_regex == "vanilla":
             train_regex = "^(cube|sphere|dragon)_.*$"
@@ -60,15 +62,19 @@ class DataModule(LightningDataModule):
             test_regex = self.buildCubeSphereRegex(test_nums)
 
         # Assign train/val datasets for use in dataloaders
-        if stage == "fit" or stage is None:
-            self.train_dataset = DataLoaderHelper(self.dataset, True, train_regex)
-            self.val_dataset = DataLoaderHelper(self.dataset, False, val_regex)
+        if stage in (None, "fit"):
+            self.train_dataset = DataLoaderHelper(self.dataset, Stage.TRAIN, train_regex)
+            self.val_dataset = DataLoaderHelper(self.dataset, Stage.VAL, val_regex)
             print(len(self.train_dataset), len(self.val_dataset))
 
         # Assign test dataset for use in dataloader
-        if stage == "test" or stage is None:
-            self.test_dataset = DataLoaderHelper(self.dataset, False, test_regex)
+        if stage in (None, "test"):
+            self.test_dataset = DataLoaderHelper(self.dataset, Stage.TEST, test_regex)
             print(len(self.test_dataset))
+
+        if stage == "predict":
+            self.predict_dataset = DataLoaderHelper(self.dataset, Stage.PREDICT, test_regex)
+            print(len(self.predict_dataset))
 
     def train_dataloader(self):
         return DataLoader(
@@ -89,6 +95,14 @@ class DataModule(LightningDataModule):
     def test_dataloader(self):
         return DataLoader(
             dataset=self.test_dataset,
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+            shuffle=False,
+        )
+
+    def predict_dataloader(self):
+        return DataLoader(
+            dataset=self.predict_dataset,
             batch_size=self.batch_size,
             num_workers=self.num_workers,
             shuffle=False,

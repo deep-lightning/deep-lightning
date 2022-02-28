@@ -1,3 +1,4 @@
+import cv2
 import torch
 import pytorch_lightning as pl
 
@@ -64,8 +65,10 @@ class CGan(pl.LightningModule):
         self.val_tracker = Tracker()
         self.test_tracker = Tracker()
 
-    def forward(self, x):
-        return self.generator(x)
+    def forward(self, batch):
+        diffuse, direct, normal, depth = batch
+        z = direct if self.hparams.local_buffer_only else torch.cat((diffuse, direct, normal, depth), 1)
+        return self.generator(z)
 
     def generator_loss(self, diffuse, direct, normal, depth, gt, indirect, batch_idx) -> torch.Tensor:
 
@@ -256,6 +259,17 @@ class CGan(pl.LightningModule):
             )
 
         return super().test_epoch_end(outputs)
+
+    def on_predict_epoch_end(self, results):
+        flat_results = torch.cat([pred for batch in results for pred in batch])
+        predict_folders = self.trainer.datamodule.predict_dataloader().dataset.valid_folders
+        for idx, output in enumerate(flat_results):
+            output = ldr2hdr(denormalize(output))
+
+            # save output
+            image_torch_final = (output.permute(1, 2, 0)).detach().cpu().numpy()
+            image_bgr = cv2.cvtColor(image_torch_final, cv2.COLOR_RGB2BGR)
+            cv2.imwrite(str((predict_folders[idx] / "output.hdr").resolve()), image_bgr)
 
     def configure_optimizers(self):
         betas = (self.hparams.beta1, self.hparams.beta2)
