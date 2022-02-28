@@ -38,8 +38,8 @@ if __name__ == "__main__":
     options.add_argument("--num_workers", type=int, default=4, help="number of threads for data loader")
     options.add_argument("--data_regex", choices=["vanilla", "positions", "lights", "cameras", "objects", "walls"])
     options.add_argument("--ckpt", type=str, help="Checkpoint path")
-    options.add_argument("--use_global", action="store_true", help="Learn global illumination")
-    options.add_argument("--local_buffer_only", action="store_true", help="Use only local buffer as input")
+    options.add_argument("--use_global", action="store_const", const=True, help="Learn global illumination")
+    options.add_argument("--local_buffer_only", action="store_const", const=True, help="Use only local buffer as input")
 
     inference = parser.add_argument_group("Script inference")
     inference.add_argument("--diffuse", type=str, help="path to diffuse")
@@ -76,6 +76,8 @@ if __name__ == "__main__":
         model = CGan.load_from_checkpoint(hparams.ckpt, **kwargs)
         print("Loaded checkpoint")
     else:
+        kwargs["use_global"] = kwargs.get("use_global", False)
+        kwargs["local_buffer_only"] = kwargs.get("local_buffer_only", False)
         model = CGan(**kwargs)
     new_hparams = Namespace(**model.hparams)
 
