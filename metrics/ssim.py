@@ -1,6 +1,6 @@
 import torch
 from torchmetrics import Metric
-from torchmetrics.functional import ssim
+from torchmetrics.functional.image.ssim import structural_similarity_index_measure
 
 
 class SSIM(Metric):
@@ -12,7 +12,7 @@ class SSIM(Metric):
 
     def update(self, preds: torch.Tensor, target: torch.Tensor):
         assert preds.shape == target.shape
-        self.total += ssim(preds, target, data_range=1)
+        self.total += structural_similarity_index_measure(preds, target, data_range=1)
         self.count += 1
 
     def compute(self):

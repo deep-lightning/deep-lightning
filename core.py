@@ -4,16 +4,19 @@ import pytorch_lightning as pl
 
 from torch import nn
 from torch.optim import Adam
-from metrics.tracker import Tracker
+
+from torchmetrics.functional.image.psnr import peak_signal_noise_ratio
+from torchmetrics.functional.image.ssim import structural_similarity_index_measure
+from torchmetrics.functional.regression import mean_squared_error
+from torchmetrics.image.psnr import PeakSignalNoiseRatio as PSNR
+from torchmetrics import MetricCollection, MeanSquaredError
 
 from common import to_display, weights_init, ldr2hdr, hdr2ldr, denormalize
+from metrics.tracker import Tracker
+from metrics.ssim import SSIM
 
 from models.generator import Generator
 from models.discriminator import Discriminator
-
-from torchmetrics import MetricCollection, MeanSquaredError, PSNR
-from torchmetrics.functional import ssim, mean_squared_error, psnr
-from metrics.ssim import SSIM
 
 
 class CGan(pl.LightningModule):
@@ -159,7 +162,8 @@ class CGan(pl.LightningModule):
         fake = self.generator(z)
 
         per_image_ssim = torch.mean(
-            ssim(denormalize(fake), denormalize(target), reduction="none", data_range=1), dim=(1, 2, 3)
+            structural_similarity_index_measure(denormalize(fake), denormalize(target), reduction="none", data_range=1),
+            dim=(1, 2, 3),
         )
 
         with torch.no_grad():
@@ -185,7 +189,7 @@ class CGan(pl.LightningModule):
             ldr_img = to_display(direct, gt, indirect, fake, self.hparams.use_global)
             logger.add_image(f"Validation/{x}_sample", ldr_img, self.current_epoch)
 
-            sample_psnr = psnr(denormalize(fake), denormalize(target), data_range=1)
+            sample_psnr = peak_signal_noise_ratio(denormalize(fake), denormalize(target), data_range=1)
             sample_mse = mean_squared_error(denormalize(fake), denormalize(target))
 
             self.log_dict(
@@ -208,7 +212,8 @@ class CGan(pl.LightningModule):
         fake = self.generator(z)
 
         per_image_ssim = torch.mean(
-            ssim(denormalize(fake), denormalize(target), reduction="none", data_range=1), dim=(1, 2, 3)
+            structural_similarity_index_measure(denormalize(fake), denormalize(target), reduction="none", data_range=1),
+            dim=(1, 2, 3),
         )
 
         if batch_idx % 128 == 0:
@@ -245,7 +250,7 @@ class CGan(pl.LightningModule):
             ldr_img = to_display(direct, gt, indirect, fake, self.hparams.use_global)
             logger.add_image(f"Test/{x}_sample", ldr_img, self.current_epoch)
 
-            sample_psnr = psnr(denormalize(fake), denormalize(target), data_range=1)
+            sample_psnr = peak_signal_noise_ratio(denormalize(fake), denormalize(target), data_range=1)
             sample_mse = mean_squared_error(denormalize(fake), denormalize(target))
 
             self.log_dict(
