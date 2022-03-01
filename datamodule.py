@@ -1,7 +1,9 @@
+import sys
+
 from pytorch_lightning import LightningDataModule
 from torch.utils.data import DataLoader
 
-from dataset import DataLoaderHelper
+from dataset import ImageDataset
 from common import Stage
 
 
@@ -16,6 +18,9 @@ class DataModule(LightningDataModule):
                         Available choices: "vanilla", "positions", "cameras", "lights", "walls", "objects", "all"
         """
         super().__init__()
+        if not dataset:
+            print("Exited because dataset value is missing")
+            sys.exit()
         self.dataset = dataset
         self.batch_size = batch_size
         self.num_workers = num_workers
@@ -63,17 +68,17 @@ class DataModule(LightningDataModule):
 
         # Assign train/val datasets for use in dataloaders
         if stage in (None, "fit"):
-            self.train_dataset = DataLoaderHelper(self.dataset, Stage.TRAIN, train_regex)
-            self.val_dataset = DataLoaderHelper(self.dataset, Stage.VAL, val_regex)
+            self.train_dataset = ImageDataset(self.dataset, Stage.TRAIN, train_regex)
+            self.val_dataset = ImageDataset(self.dataset, Stage.VAL, val_regex)
             print(len(self.train_dataset), len(self.val_dataset))
 
         # Assign test dataset for use in dataloader
         if stage in (None, "test"):
-            self.test_dataset = DataLoaderHelper(self.dataset, Stage.TEST, test_regex)
+            self.test_dataset = ImageDataset(self.dataset, Stage.TEST, test_regex)
             print(len(self.test_dataset))
 
         if stage == "predict":
-            self.predict_dataset = DataLoaderHelper(self.dataset, Stage.PREDICT, test_regex)
+            self.predict_dataset = ImageDataset(self.dataset, Stage.PREDICT, test_regex)
             print(len(self.predict_dataset))
 
     def train_dataloader(self):

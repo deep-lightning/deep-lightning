@@ -18,7 +18,7 @@ def all_images_exist(folder: Path, images: T.List[str]):
     return all((folder / img).is_file() for img in images.values())
 
 
-class DataLoaderHelper(Dataset):
+class ImageDataset(Dataset):
     def __init__(self, root_dir: str, stage: Stage, pattern: str = ".*"):
         super().__init__()
 
