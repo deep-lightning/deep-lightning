@@ -8,68 +8,12 @@ from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 from core import CGan
 from datamodule import DataModule
 
-if __name__ == "__main__":
-    pl.seed_everything(42, workers=True)
-    parser = ArgumentParser()
 
-    # add lightning trainer arguments
-    parser = pl.Trainer.add_argparse_args(parser)
-
-    modes = parser.add_argument_group("Script modes")
-    modes.add_argument("--train", action="store_true", help="Train a model")
-    modes.add_argument("--test", action="store_true", help="Test a model")
-    modes.add_argument("--bench", action="store_true", help="Benchmark a model")
-    modes.add_argument("--predict", action="store_true", help="Make a prediction")
-
-    options = parser.add_argument_group("Script options")
-    options.add_argument("--batch_size", type=int, default=4, help="Number of samples to use per batch")
-    options.add_argument("--n_channel_input", type=int, default=3, help="Number of input channels")
-    options.add_argument("--n_channel_output", type=int, default=3, help="Number of output channels")
-    options.add_argument("--n_generator_filters", type=int, default=64, help="Number of initial generator filters")
-    options.add_argument(
-        "--n_discriminator_filters", type=int, default=64, help="Number of initial discriminator filters"
-    )
-    options.add_argument("--lr", type=float, default=0.0002, help="Initial learning rate")
-    options.add_argument("--beta1", type=float, default=0.5, help="Adam's beta1")
-    options.add_argument("--beta2", type=float, default=0.999, help="Adam's beta2")
-    options.add_argument("--lambda_factor", type=int, default=100, help="L1 regularization factor")
-    options.add_argument("--num_workers", type=int, default=4, help="Number of subprocesses to use for data loading")
-    options.add_argument(
-        "--data_regex",
-        help="Predefined regex for splitting data",
-        choices=["vanilla", "positions", "cameras", "lights", "walls", "objects", "all"],
-    )
-    options.add_argument("--ckpt", type=str, help="Checkpoint path")
-    options.add_argument("--use_global", action="store_const", const=True, help="Learn global illumination")
-    options.add_argument("--local_buffer_only", action="store_const", const=True, help="Use only local buffer as input")
-
-    (partial, _) = parser.parse_known_args()
-    options.add_argument("--dataset", required=not partial.ckpt, help="Folder where the samples are stored")
-
-    hparams = parser.parse_args()
-    hparams.deterministic = True
-
-    callbacks = [
-        ModelCheckpoint(
-            monitor="Validation/ssim",
-            mode="max",
-            save_top_k=5,
-            every_n_epochs=50,
-            auto_insert_metric_name=False,
-            filename="ssim_epoch={epoch:02d}-psnr={Validation/psnr:.4f}-ssim={Validation/ssim:.4f}-mse={Validation/mse:.6f}",
-        ),
-        ModelCheckpoint(
-            monitor="Validation/ssim",
-            mode="max",
-            auto_insert_metric_name=False,
-            filename="ssim_epoch={epoch:02d}-psnr={Validation/psnr:.4f}-ssim={Validation/ssim:.4f}-mse={Validation/mse:.6f}",
-        ),
-    ]
-
+def main(args):
     # initialize model
-    kwargs = {k: v for k, v in vars(hparams).items() if v is not None}
-    if hparams.ckpt:
-        model = CGan.load_from_checkpoint(hparams.ckpt, **kwargs)
+    kwargs = {k: v for k, v in vars(args).items() if v is not None}
+    if args.ckpt:
+        model = CGan.load_from_checkpoint(args.ckpt, **kwargs)
         print("Loaded checkpoint")
     else:
         kwargs["use_global"] = kwargs.get("use_global", False)
@@ -86,10 +30,23 @@ if __name__ == "__main__":
     )
 
     # initialize a trainer
+    callbacks = [
+        ModelCheckpoint(
+            monitor="Validation/ssim",
+            mode="max",
+            save_top_k=5,
+            every_n_epochs=50,
+            auto_insert_metric_name=False,
+            filename="ssim_epoch={epoch:02d}-psnr={Validation/psnr:.4f}-ssim={Validation/ssim:.4f}-mse={Validation/mse:.6f}",
+        ),
+        ModelCheckpoint(
+            monitor="Validation/ssim",
+            mode="max",
+            auto_insert_metric_name=False,
+            filename="ssim_epoch={epoch:02d}-psnr={Validation/psnr:.4f}-ssim={Validation/ssim:.4f}-mse={Validation/mse:.6f}",
+        ),
+    ]
     trainer = pl.Trainer.from_argparse_args(new_hparams, callbacks=callbacks)
-
-    if new_hparams.auto_lr_find:
-        trainer.tune(model, data)
 
     # Train the model
     if new_hparams.train:
@@ -106,9 +63,9 @@ if __name__ == "__main__":
     # Benchmark the model
     if new_hparams.bench:
         model.eval()
-        data.setup("test")
+        data.setup("predict")
         data.num_workers = 0  # disable parallel loading
-        loader = data.test_dataloader()
+        loader = data.predict_dataloader()
 
         bench_time = 30  # seconds
 
@@ -124,16 +81,15 @@ if __name__ == "__main__":
             while total_time < bench_time:
                 try:
                     start_data = time.perf_counter()
-                    diffuse, direct, normal, depth, _, _ = next(items)
-                    z = torch.cat((diffuse, direct, normal, depth), 1)
+                    batch = next(items)
                     end_data = time.perf_counter()
                     total_data_time += end_data - start_data
 
                     start = time.perf_counter()
-
-                    result = model_cpu(z)
+                    result = model_cpu(batch)
                     end = time.perf_counter()
                     total_model_time += end - start
+
                     iters += 1
                     total_time = time.perf_counter() - start_time
                 except StopIteration:
@@ -155,18 +111,18 @@ if __name__ == "__main__":
                 while total_time < bench_time:
                     try:
                         start_data = time.perf_counter()
-                        diffuse, direct, normal, depth, _, _ = next(items)
-                        z = torch.cat((diffuse, direct, normal, depth), 1)
+                        batch = next(items)
+                        batch_cuda = [x.cuda() for x in batch]
+                        torch.cuda.synchronize()
                         end_data = time.perf_counter()
                         total_data_time += end_data - start_data
 
-                        z_cuda = z.cuda()
-                        torch.cuda.synchronize()
                         start = time.perf_counter()
-                        result = model_gpu(z_cuda)
+                        result = model_gpu(batch_cuda)
                         torch.cuda.synchronize()
                         end = time.perf_counter()
                         total_model_time += end - start
+
                         iters += 1
                         total_time = time.perf_counter() - start_time
                     except StopIteration:
@@ -175,3 +131,44 @@ if __name__ == "__main__":
                     f"Preprocessing average time: {(total_data_time / iters) * 1000} ms on {iters} runs\n"
                     f"PyTorch average time on GPU: {(total_model_time / iters) * 1000} ms on {iters} runs\n"
                 )
+
+
+if __name__ == "__main__":
+    pl.seed_everything(42, workers=True)
+    parser = ArgumentParser()
+
+    # add lightning trainer arguments
+    parser = pl.Trainer.add_argparse_args(parser)
+    parser.add_argument("--ckpt", type=str, help="Checkpoint path")
+
+    modes = parser.add_argument_group("Script modes")
+    modes.add_argument("--train", action="store_true", help="Train a model")
+    modes.add_argument("--test", action="store_true", help="Test a model")
+    modes.add_argument("--bench", action="store_true", help="Benchmark a model")
+    modes.add_argument("--predict", action="store_true", help="Make a prediction")
+
+    opt = parser.add_argument_group("Data options")
+    opt.add_argument("--dataset", type=str, help="Folder where the samples are stored")
+    opt.add_argument("--batch_size", type=int, default=4, help="Number of samples to use per batch")
+    opt.add_argument("--num_workers", type=int, default=4, help="Number of subprocesses to use for data loading")
+    opt.add_argument(
+        "--data_regex",
+        help="Predefined regex for splitting data",
+        choices=["vanilla", "positions", "cameras", "lights", "walls", "objects", "all"],
+    )
+
+    opt = parser.add_argument_group("Model options")
+    opt.add_argument("--n_channel_input", type=int, default=3, help="Number of input channels of each image")
+    opt.add_argument("--n_channel_output", type=int, default=3, help="Number of output channels of each image")
+    opt.add_argument("--n_generator_filters", type=int, default=64, help="Number of initial generator filters")
+    opt.add_argument("--n_discriminator_filters", type=int, default=64, help="Number of initial discriminator filters")
+    opt.add_argument("--lr", type=float, default=0.0002, help="Initial learning rate")
+    opt.add_argument("--beta1", type=float, default=0.5, help="Adam's beta1")
+    opt.add_argument("--beta2", type=float, default=0.999, help="Adam's beta2")
+    opt.add_argument("--lambda_factor", type=int, default=100, help="L1 regularization factor")
+    opt.add_argument("--use_global", action="store_const", const=True, help="Learn global illumination")
+    opt.add_argument("--local_buffer_only", action="store_const", const=True, help="Use only local buffer as input")
+
+    hparams = parser.parse_args()
+    hparams.deterministic = True
+    main(hparams)
