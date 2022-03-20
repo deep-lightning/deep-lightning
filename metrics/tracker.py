@@ -4,8 +4,8 @@ from torchmetrics import Metric
 
 
 class Tracker(Metric):
-    def __init__(self, dist_sync_on_step=False):
-        super().__init__(dist_sync_on_step=dist_sync_on_step)
+    def __init__(self, compute_on_step=False, dist_sync_on_step=False):
+        super().__init__(compute_on_step=compute_on_step, dist_sync_on_step=dist_sync_on_step)
 
         self.add_state("best_value", default=torch.tensor(0))
         self.add_state("best_buffers", default=[])
@@ -13,8 +13,12 @@ class Tracker(Metric):
         self.add_state("worst_value", default=torch.tensor(float("inf")))
         self.add_state("worst_buffers", default=[])
 
+        self.add_state("med_scores", default=[])
+
     def update(self, batch_metrics: torch.Tensor, batch: T.Tuple[torch.Tensor]):
         direct, gt, indirect, fake, target = batch
+
+        self.med_scores.append(batch_metrics)
 
         max_val, max_ind = torch.max(batch_metrics, dim=0)
         if max_val > self.best_value:
@@ -39,9 +43,12 @@ class Tracker(Metric):
             )
 
     def compute(self):
+        med_value, med_index = torch.cat(self.med_scores).median(dim=-1)
         return {
             "best_value": self.best_value,
             "best_buffers": self.best_buffers,
             "worst_value": self.worst_value,
             "worst_buffers": self.worst_buffers,
+            "med_value": med_value,
+            "med_index": med_index,
         }

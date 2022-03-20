@@ -11,7 +11,7 @@ from torchmetrics.functional.regression import mean_squared_error
 from torchmetrics.image.psnr import PeakSignalNoiseRatio as PSNR
 from torchmetrics import MetricCollection, MeanSquaredError
 
-from common import to_display, weights_init, ldr2hdr, hdr2ldr, denormalize
+from common import ssim_to_rgb, to_display, weights_init, ldr2hdr, hdr2ldr, denormalize
 from metrics.tracker import Tracker
 from metrics.ssim import SSIM
 
@@ -154,116 +154,98 @@ class CGan(pl.LightningModule):
 
         return result
 
-    def validation_step(self, batch, batch_idx):
+    def eval_step(self, batch, batch_idx, is_test=True):
+        eval_tracker = self.test_tracker if is_test else self.val_tracker
+        eval_metrics = self.test_metrics if is_test else self.val_metrics
+
         diffuse, direct, normal, depth, gt, indirect = batch
         target = gt if self.hparams.use_global else indirect
 
         z = direct if self.hparams.local_buffer_only else torch.cat((diffuse, direct, normal, depth), 1)
         fake = self.generator(z)
 
-        per_image_ssim = torch.mean(
-            structural_similarity_index_measure(denormalize(fake), denormalize(target), reduction="none", data_range=1),
-            dim=(1, 2, 3),
-        )
+        fake_toned = denormalize(fake)
+        target_toned = denormalize(target)
 
-        with torch.no_grad():
-            self.val_tracker(per_image_ssim, (direct, gt, indirect, fake, target))
-            self.val_metrics(denormalize(fake), denormalize(target))
+        per_image_ssim = structural_similarity_index_measure(fake_toned, target_toned, reduction="none", data_range=1)
 
+        # compute metrics
+        eval_tracker(per_image_ssim.mean(dim=(1, 2, 3)), (direct, gt, indirect, fake, target))
+        eval_metrics(fake_toned, target_toned)
+
+        if not self.hparams.use_global and is_test:
+            direct_toned = denormalize(direct)
+
+            fake_untoned = ldr2hdr(fake_toned)
+            direct_untoned = ldr2hdr(direct_toned)
+
+            fake_gt = fake_untoned + direct_untoned
+
+            self.test_metrics_global(hdr2ldr(fake_gt), denormalize(gt))
+            self.log_dict(self.test_metrics_global, on_step=False, on_epoch=True)
+
+        # log samples
         if batch_idx % 128 == 0:
             logger = self.logger.experiment
+            name = "Test" if is_test else "Validation"
+
             ldr_img = to_display(direct, gt, indirect, fake, self.hparams.use_global)
-            logger.add_image(f"Validation/{batch_idx}", ldr_img, self.current_epoch)
 
-        self.log_dict(self.val_metrics, on_step=False, on_epoch=True)
+            logger.add_image(f"{name}/{batch_idx}", ldr_img, self.current_epoch)
+            logger.add_image(f"{name}/{batch_idx}_ssim", ssim_to_rgb(per_image_ssim), self.current_epoch)
 
-    def validation_epoch_end(self, outputs) -> None:
+        self.log_dict(eval_metrics, on_step=False, on_epoch=True)
 
-        stats = self.val_tracker.compute()
-        self.val_tracker.reset()
+    def eval_epoch_end(self, outputs, is_test=True):
+        eval_tracker = self.test_tracker if is_test else self.val_tracker
+        eval_dataset = (
+            self.trainer.datamodule.test_dataloader().dataset
+            if is_test
+            else self.trainer.datamodule.val_dataloader().dataset
+        )
 
-        for x in ("best", "worst"):
-            direct, gt, indirect, fake, target = stats[f"{x}_buffers"]
+        stats = eval_tracker.compute()
+        eval_tracker.reset()
 
-            logger = self.logger.experiment
+        logger = self.logger.experiment
+        name = "Test" if is_test else "Validation"
+
+        for sample in ("best", "worst", "med"):
+            if sample == "med":
+                batch = [x.unsqueeze(0).cuda() for x in eval_dataset[stats["med_index"]]]
+                diffuse, direct, normal, depth, gt, indirect = batch
+                z = direct if self.hparams.local_buffer_only else torch.cat((diffuse, direct, normal, depth), 1)
+                fake = self.generator(z)
+            else:
+                direct, gt, indirect, fake, target = stats[f"{sample}_buffers"]
+
             ldr_img = to_display(direct, gt, indirect, fake, self.hparams.use_global)
-            logger.add_image(f"Validation/{x}_sample", ldr_img, self.current_epoch)
+            logger.add_image(f"{name}/{sample}_sample", ldr_img, self.current_epoch)
 
             sample_psnr = peak_signal_noise_ratio(denormalize(fake), denormalize(target), data_range=1)
             sample_mse = mean_squared_error(denormalize(fake), denormalize(target))
 
             self.log_dict(
                 {
-                    f"Validation_sample/{x}_ssim": stats[f"{x}_value"],
-                    f"Validation_sample/{x}_psnr": sample_psnr,
-                    f"Validation_sample/{x}_mse": sample_mse,
+                    f"{name}_sample/{sample}_ssim": stats[f"{sample}_value"],
+                    f"{name}_sample/{sample}_psnr": sample_psnr,
+                    f"{name}_sample/{sample}_mse": sample_mse,
                 },
                 on_step=False,
                 on_epoch=True,
             )
 
-        return super().validation_epoch_end(outputs)
+    def validation_step(self, batch, batch_idx):
+        self.eval_step(batch, batch_idx, is_test=False)
+
+    def validation_epoch_end(self, outputs):
+        self.eval_epoch_end(outputs, is_test=False)
 
     def test_step(self, batch, batch_idx):
-        diffuse, direct, normal, depth, gt, indirect = batch
-        target = gt if self.hparams.use_global else indirect
+        self.eval_step(batch, batch_idx, is_test=True)
 
-        z = direct if self.hparams.local_buffer_only else torch.cat((diffuse, direct, normal, depth), 1)
-        fake = self.generator(z)
-
-        per_image_ssim = torch.mean(
-            structural_similarity_index_measure(denormalize(fake), denormalize(target), reduction="none", data_range=1),
-            dim=(1, 2, 3),
-        )
-
-        if batch_idx % 128 == 0:
-            logger = self.logger.experiment
-            ldr_img = to_display(direct, gt, indirect, fake, self.hparams.use_global)
-            logger.add_image(f"Test/{batch_idx}", ldr_img, self.current_epoch)
-
-        with torch.no_grad():
-            self.test_tracker(per_image_ssim, (direct, gt, indirect, fake, target))
-            self.test_metrics(denormalize(fake), denormalize(target))
-            self.log_dict(self.test_metrics, on_step=False, on_epoch=True)
-
-            if not self.hparams.use_global:
-                fake_un = denormalize(fake)
-                direct_un = denormalize(direct)
-
-                fake_untoned = ldr2hdr(fake_un)
-                direct_untoned = ldr2hdr(direct_un)
-
-                fake_gt = fake_untoned + direct_untoned
-
-                self.test_metrics_global(hdr2ldr(fake_gt), denormalize(gt))
-                self.log_dict(self.test_metrics_global, on_step=False, on_epoch=True)
-
-    def test_epoch_end(self, outputs) -> None:
-
-        stats = self.test_tracker.compute()
-        self.test_tracker.reset()
-
-        for x in ("best", "worst"):
-            direct, gt, indirect, fake, target = stats[f"{x}_buffers"]
-
-            logger = self.logger.experiment
-            ldr_img = to_display(direct, gt, indirect, fake, self.hparams.use_global)
-            logger.add_image(f"Test/{x}_sample", ldr_img, self.current_epoch)
-
-            sample_psnr = peak_signal_noise_ratio(denormalize(fake), denormalize(target), data_range=1)
-            sample_mse = mean_squared_error(denormalize(fake), denormalize(target))
-
-            self.log_dict(
-                {
-                    f"Test_sample/{x}_ssim": stats[f"{x}_value"],
-                    f"Test_sample/{x}_psnr": sample_psnr,
-                    f"Test_sample/{x}_mse": sample_mse,
-                },
-                on_step=False,
-                on_epoch=True,
-            )
-
-        return super().test_epoch_end(outputs)
+    def test_epoch_end(self, outputs):
+        self.eval_epoch_end(outputs, is_test=True)
 
     def on_predict_epoch_end(self, results):
         flat_results = torch.cat([pred for batch in results for pred in batch])

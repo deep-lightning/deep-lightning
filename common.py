@@ -44,12 +44,12 @@ def weights_init(m):
         nn.init.constant_(m.bias.data, 0)
 
 
-def hdr2ldr(image):
+def hdr2ldr(image: torch.Tensor):
     """Scales image from range [0, infinity] to [0,1]"""
     return image / (1 + image)
 
 
-def ldr2hdr(image):
+def ldr2hdr(image: torch.Tensor):
     """Scales image from range [0,1] to [0, infinity]"""
     return image / (1 - image)
 
@@ -57,11 +57,11 @@ def ldr2hdr(image):
 def to_display(
     direct: torch.Tensor, gt: torch.Tensor, indirect: torch.Tensor, fake: torch.Tensor, use_global: bool = False
 ):
-    gt_un = denormalize(gt)
-    fake_un = denormalize(fake)
+    gt_toned = denormalize(gt)
+    fake_toned = denormalize(fake)
 
-    gt_untoned = ldr2hdr(gt_un)
-    fake_untoned = ldr2hdr(fake_un)
+    gt_untoned = ldr2hdr(gt_toned)
+    fake_untoned = ldr2hdr(fake_toned)
 
     if use_global:
         diff = torch.abs(gt_untoned - fake_untoned)
@@ -79,6 +79,12 @@ def to_display(
         diff = torch.abs(indirect_untoned - fake_untoned)
         batch = torch.cat((fake_untoned, indirect_untoned, diff, fake_gt, real_gt, gt_untoned), 3)
 
-    batch_hdr = hdr2ldr(batch)
-    gamma_batch = (batch_hdr ** (1 / 2.2)).clip(0, 1)
+    batch_toned = hdr2ldr(batch)
+    gamma_batch = (batch_toned ** (1 / 2.2)).clip(0, 1)
+    return torchvision.utils.make_grid(gamma_batch, nrow=1)
+
+
+def ssim_to_rgb(ssim: torch.Tensor):
+    ssim_toned = denormalize(ssim)
+    gamma_batch = (ssim_toned ** (1 / 2.2)).clip(0, 1)
     return torchvision.utils.make_grid(gamma_batch, nrow=1)
