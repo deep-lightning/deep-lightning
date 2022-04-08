@@ -1,8 +1,8 @@
 from enum import Enum
-import torch
-from torch import nn
 
+import torch
 import torchvision
+from torch import nn
 from torchvision import transforms
 
 

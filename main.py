@@ -1,8 +1,8 @@
 import time
 from argparse import ArgumentParser, Namespace
 
-import torch
 import pytorch_lightning as pl
+import torch
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 
 from core import CGan

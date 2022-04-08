@@ -1,16 +1,15 @@
-import re
 import random
+import re
 import typing as T
 from pathlib import Path
 
 import cv2
 import torch
 import torchvision.transforms.functional as TF
-
 from torch.utils.data import Dataset
 from torchvision import transforms
 
-from common import hdr2ldr, normalize, required_images, Stage
+from common import Stage, hdr2ldr, normalize, required_images
 
 
 def all_images_exist(folder: Path, images: T.List[str]):

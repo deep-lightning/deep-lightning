@@ -1,9 +1,9 @@
 import re
 import sys
-import hub
-import cv2
-
 from pathlib import Path
+
+import cv2
+import hub
 from tqdm import tqdm
 
 from common import required_images

@@ -1,7 +1,8 @@
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 from matplotlib.colors import LinearSegmentedColormap
-from pathlib import Path
 
 # Create the colormap
 colors = ["#F4C849", "#FF4F19", "#54AC61", "#84C5DD", "#DCB5FF"]

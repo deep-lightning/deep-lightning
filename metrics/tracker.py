@@ -1,5 +1,6 @@
-import torch
 import typing as T
+
+import torch
 from torchmetrics import Metric
 
 

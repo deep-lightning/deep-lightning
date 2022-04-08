@@ -3,5 +3,15 @@
   "python.formatting.blackArgs": [
     "--line-length",
     "120"
-  ]
+  ],
+  "editor.rulers": [
+    120
+  ],
+  "editor.formatOnSave": true,
+  "editor.codeActionsOnSave": {
+    "source.organizeImports": true
+  },
+  "python.sortImports.args": [
+    "--atomic"
+  ],
 }
