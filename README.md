@@ -74,11 +74,15 @@ where `<source>` is the name of the dataset to download and `<target_folder>` is
 
 | Dataset name                                                             | Size | Description                                                                                                                          | Compatible data_regex   |
 | ------------------------------------------------------------------------ | ---- | ------------------------------------------------------------------------------------------------------------------------------------ | ----------------------- |
-| [vanilla](https:/app.activeloop.ai/deep-lightning/vanilla)               | 10k  | Cornell Box with an object (bunny, buddha, cube, dragon and sphere) placed in different positions                                    | vanilla, positions, all |
-| [camera-variant](https:/app.activeloop.ai/deep-lightning/camera-variant) | 4k   | Cornell Box with both an object (bunny and buddha) and the camera placed in different positions                                      | cameras, all            |
-| [light-variant](https:/app.activeloop.ai/deep-lightning/light-variant)   | 4k   | Cornell Box with both an object (bunny and buddha) and the light placed in different positions                                       | lights, all             |
-| [wall-variant](https:/app.activeloop.ai/deep-lightning/wall-variant)     | 4k   | Cornell Box with two color combinations (red/greed and yellow/violet) and an object (bunny and buddha) placed in different positions | walls, all              |
-| [object-variant](https:/app.activeloop.ai/deep-lightning/object-variant) | 4k   | Cornell Box with a cube and a sphere placed in different positions                                                                   | objects, all            |
+| [vanilla](https://app.activeloop.ai/deep-lightning/vanilla)               | 10k  | Cornell Box with an object (bunny, buddha, cube, dragon and sphere) placed in different positions                                    | vanilla, positions, all |
+| [camera-variant](https://app.activeloop.ai/deep-lightning/camera-variant) | 4k   | Cornell Box with both an object (bunny and buddha) and the camera placed in different positions                                      | cameras, all            |
+| [light-variant](https://app.activeloop.ai/deep-lightning/light-variant)   | 4k   | Cornell Box with both an object (bunny and buddha) and the light placed in different positions                                       | lights, all             |
+| [wall-variant](https://app.activeloop.ai/deep-lightning/wall-variant)     | 4k   | Cornell Box with two color combinations (red/greed and yellow/violet) and an object (bunny and buddha) placed in different positions | walls, all              |
+| [object-variant](https://app.activeloop.ai/deep-lightning/object-variant) | 4k   | Cornell Box with a cube and a sphere placed in different positions                                                                   | objects, all            |
+
+### Model checkpoints
+
+Checkpoints using the datasets mentioned above can be found [here](https://drive.google.com/drive/folders/1L_HRFCTGXoQciFdY1MFkRs6P87zIlnyr?usp=sharing).
 
 ## Usage
 
