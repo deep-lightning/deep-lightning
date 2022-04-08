@@ -32,10 +32,14 @@ charset-normalizer==2.0.12
     #   requests
 click==8.0.4
     # via hub
+cycler==0.11.0
+    # via matplotlib
 dill==0.3.4
     # via
     #   multiprocess
     #   pathos
+fonttools==4.31.2
+    # via matplotlib
 frozenlist==1.3.0
     # via
     #   aiohttp
@@ -66,8 +70,12 @@ jmespath==0.10.0
     # via
     #   boto3
     #   botocore
+kiwisolver==1.4.2
+    # via matplotlib
 markdown==3.3.6
     # via tensorboard
+matplotlib==3.5.1
+    # via -r requirements.in
 multidict==6.0.2
     # via
     #   aiohttp
@@ -79,8 +87,10 @@ numcodecs==0.9.1
 numpy==1.22.2
     # via
     #   hub
+    #   matplotlib
     #   numcodecs
     #   opencv-python
+    #   pandas
     #   pytorch-lightning
     #   tensorboard
     #   torchmetrics
@@ -91,13 +101,17 @@ opencv-python==4.5.5.62
     # via -r requirements.in
 packaging==21.3
     # via
+    #   matplotlib
     #   pytorch-lightning
     #   torchmetrics
+pandas==1.4.1
+    # via -r requirements.in
 pathos==0.2.8
     # via hub
 pillow==9.0.1
     # via
     #   hub
+    #   matplotlib
     #   torchvision
 pox==0.3.0
     # via pathos
@@ -116,11 +130,18 @@ pydeprecate==0.3.1
     #   pytorch-lightning
     #   torchmetrics
 pyparsing==3.0.7
-    # via packaging
+    # via
+    #   matplotlib
+    #   packaging
 python-dateutil==2.8.2
-    # via botocore
+    # via
+    #   botocore
+    #   matplotlib
+    #   pandas
 pytorch-lightning==1.4.2
     # via -r requirements.in
+pytz==2022.1
+    # via pandas
 pyyaml==6.0
     # via pytorch-lightning
 requests==2.27.1

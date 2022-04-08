@@ -8,7 +8,7 @@ from torch.optim import Adam
 from torchmetrics.functional.image.psnr import peak_signal_noise_ratio
 from torchmetrics.functional.image.ssim import structural_similarity_index_measure
 from torchmetrics.functional.regression import mean_squared_error
-from torchmetrics.image.psnr import PeakSignalNoiseRatio as PSNR
+from torchmetrics.image.psnr import PeakSignalNoiseRatio
 from torchmetrics import MetricCollection, MeanSquaredError
 
 from common import ssim_to_rgb, to_display, weights_init, ldr2hdr, hdr2ldr, denormalize
@@ -17,6 +17,9 @@ from metrics.ssim import SSIM
 
 from models.generator import Generator
 from models.discriminator import Discriminator
+
+from pathlib import Path
+from plot import save_score_histogram
 
 
 class CGan(pl.LightningModule):
@@ -59,7 +62,9 @@ class CGan(pl.LightningModule):
         self.gan_loss = nn.BCELoss()
 
         # metrics
-        metrics = MetricCollection({"mse": MeanSquaredError(), "ssim": SSIM(), "psnr": PSNR(data_range=1)})
+        metrics = MetricCollection(
+            {"mse": MeanSquaredError(), "ssim": SSIM(), "psnr": PeakSignalNoiseRatio(data_range=1)}
+        )
         self.train_metrics = metrics.clone(prefix="Train/")
         self.val_metrics = metrics.clone(prefix="Validation/")
         self.test_metrics = metrics.clone(prefix="Test/")
@@ -73,16 +78,16 @@ class CGan(pl.LightningModule):
         z = direct if self.hparams.local_buffer_only else torch.cat((diffuse, direct, normal, depth), 1)
         return self.generator(z)
 
-    def generator_loss(self, diffuse, direct, normal, depth, gt, indirect, batch_idx) -> torch.Tensor:
+    def generator_loss(self, diffuse, direct, normal, depth, gi, indirect, batch_idx) -> torch.Tensor:
 
         z = direct if self.hparams.local_buffer_only else torch.cat((diffuse, direct, normal, depth), 1)
         fake = self.generator(z)
 
-        target = gt if self.hparams.use_global else indirect
+        target = gi if self.hparams.use_global else indirect
 
         if batch_idx == 0:
             logger = self.logger.experiment
-            ldr_img = to_display(direct, gt, indirect, fake, self.hparams.use_global)
+            ldr_img = to_display(direct, gi, indirect, fake, self.hparams.use_global)
             logger.add_image("Train", ldr_img, self.current_epoch)
 
         prediction = self.discriminator(torch.cat((z, fake), 1))
@@ -104,12 +109,12 @@ class CGan(pl.LightningModule):
 
         return gan_loss + l1_loss
 
-    def discriminator_loss(self, diffuse, direct, normal, depth, gt, indirect) -> torch.Tensor:
+    def discriminator_loss(self, diffuse, direct, normal, depth, gi, indirect) -> torch.Tensor:
 
         z = direct if self.hparams.local_buffer_only else torch.cat((diffuse, direct, normal, depth), 1)
         fake = self.generator(z)
 
-        target = gt if self.hparams.use_global else indirect
+        target = gi if self.hparams.use_global else indirect
 
         # train on real data
         real_data = torch.cat((z, target), 1)
@@ -154,87 +159,6 @@ class CGan(pl.LightningModule):
 
         return result
 
-    def eval_step(self, batch, batch_idx, is_test=True):
-        eval_tracker = self.test_tracker if is_test else self.val_tracker
-        eval_metrics = self.test_metrics if is_test else self.val_metrics
-
-        diffuse, direct, normal, depth, gt, indirect = batch
-        target = gt if self.hparams.use_global else indirect
-
-        z = direct if self.hparams.local_buffer_only else torch.cat((diffuse, direct, normal, depth), 1)
-        fake = self.generator(z)
-
-        fake_toned = denormalize(fake)
-        target_toned = denormalize(target)
-
-        per_image_ssim = structural_similarity_index_measure(fake_toned, target_toned, reduction="none", data_range=1)
-
-        # compute metrics
-        eval_tracker(per_image_ssim.mean(dim=(1, 2, 3)), (direct, gt, indirect, fake, target))
-        eval_metrics(fake_toned, target_toned)
-
-        if not self.hparams.use_global and is_test:
-            direct_toned = denormalize(direct)
-
-            fake_untoned = ldr2hdr(fake_toned)
-            direct_untoned = ldr2hdr(direct_toned)
-
-            fake_gt = fake_untoned + direct_untoned
-
-            self.test_metrics_global(hdr2ldr(fake_gt), denormalize(gt))
-            self.log_dict(self.test_metrics_global, on_step=False, on_epoch=True)
-
-        # log samples
-        if batch_idx % 128 == 0:
-            logger = self.logger.experiment
-            name = "Test" if is_test else "Validation"
-
-            ldr_img = to_display(direct, gt, indirect, fake, self.hparams.use_global)
-
-            logger.add_image(f"{name}/{batch_idx}", ldr_img, self.current_epoch)
-            logger.add_image(f"{name}/{batch_idx}_ssim", ssim_to_rgb(per_image_ssim), self.current_epoch)
-
-        self.log_dict(eval_metrics, on_step=False, on_epoch=True)
-
-    def eval_epoch_end(self, outputs, is_test=True):
-        eval_tracker = self.test_tracker if is_test else self.val_tracker
-        eval_dataset = (
-            self.trainer.datamodule.test_dataloader().dataset
-            if is_test
-            else self.trainer.datamodule.val_dataloader().dataset
-        )
-
-        stats = eval_tracker.compute()
-        eval_tracker.reset()
-
-        logger = self.logger.experiment
-        name = "Test" if is_test else "Validation"
-
-        for sample in ("best", "worst", "med"):
-            if sample == "med":
-                batch = [x.unsqueeze(0).cuda() for x in eval_dataset[stats["med_index"]]]
-                diffuse, direct, normal, depth, gt, indirect = batch
-                z = direct if self.hparams.local_buffer_only else torch.cat((diffuse, direct, normal, depth), 1)
-                fake = self.generator(z)
-            else:
-                direct, gt, indirect, fake, target = stats[f"{sample}_buffers"]
-
-            ldr_img = to_display(direct, gt, indirect, fake, self.hparams.use_global)
-            logger.add_image(f"{name}/{sample}_sample", ldr_img, self.current_epoch)
-
-            sample_psnr = peak_signal_noise_ratio(denormalize(fake), denormalize(target), data_range=1)
-            sample_mse = mean_squared_error(denormalize(fake), denormalize(target))
-
-            self.log_dict(
-                {
-                    f"{name}_sample/{sample}_ssim": stats[f"{sample}_value"],
-                    f"{name}_sample/{sample}_psnr": sample_psnr,
-                    f"{name}_sample/{sample}_mse": sample_mse,
-                },
-                on_step=False,
-                on_epoch=True,
-            )
-
     def validation_step(self, batch, batch_idx):
         self.eval_step(batch, batch_idx, is_test=False)
 
@@ -269,3 +193,114 @@ class CGan(pl.LightningModule):
         items = super().get_progress_bar_dict()
         items.pop("loss", None)
         return items
+
+    def eval_step(self, batch, batch_idx, is_test=True):
+        eval_tracker = self.test_tracker if is_test else self.val_tracker
+        eval_metrics = self.test_metrics if is_test else self.val_metrics
+
+        diffuse, direct, normal, depth, gi, indirect = batch
+        target = gi if self.hparams.use_global else indirect
+
+        z = direct if self.hparams.local_buffer_only else torch.cat((diffuse, direct, normal, depth), 1)
+        fake = self.generator(z)
+
+        fake_toned = denormalize(fake)
+        target_toned = denormalize(target)
+
+        # compute metrics
+        per_image_ssim = structural_similarity_index_measure(fake_toned, target_toned, reduction="none", data_range=1)
+        eval_tracker(per_image_ssim.mean(dim=(1, 2, 3)), (direct, gi, indirect, fake, target))
+
+        eval_metrics(fake_toned, target_toned)
+        self.log_dict(eval_metrics, on_step=False, on_epoch=True)
+
+        # write scores and object to file
+        if is_test:
+            self.log_batch_to_file("data.csv", batch_idx, fake_toned, target_toned)
+
+            if not self.hparams.use_global:
+                gi_toned = denormalize(gi)
+                direct_toned = denormalize(direct)
+
+                fake_untoned = ldr2hdr(fake_toned)
+                direct_untoned = ldr2hdr(direct_toned)
+
+                fake_gi = fake_untoned + direct_untoned
+                fake_gi_toned = hdr2ldr(fake_gi)
+
+                self.test_metrics_global(fake_gi_toned, gi_toned)
+                self.log_dict(self.test_metrics_global, on_step=False, on_epoch=True)
+                self.log_batch_to_file("data_global.csv", batch_idx, fake_gi_toned, gi_toned)
+
+        # log samples
+        if batch_idx % 128 == 0:
+            logger = self.logger.experiment
+            name = "Test" if is_test else "Validation"
+
+            ldr_img = to_display(direct, gi, indirect, fake, self.hparams.use_global)
+
+            logger.add_image(f"{name}/{batch_idx}", ldr_img, self.current_epoch)
+            logger.add_image(f"{name}/{batch_idx}_ssim", ssim_to_rgb(per_image_ssim), self.current_epoch)
+
+    def eval_epoch_end(self, outputs, is_test=True):
+        eval_tracker = self.test_tracker if is_test else self.val_tracker
+        stats = eval_tracker.compute()
+        eval_tracker.reset()
+
+        logger = self.logger.experiment
+        name = "Test" if is_test else "Validation"
+
+        for sample in ("best", "worst"):
+            direct, gi, indirect, fake, target = stats[f"{sample}_buffers"]
+
+            fake_toned = denormalize(fake)
+            target_toned = denormalize(target)
+
+            sample_psnr = peak_signal_noise_ratio(fake_toned, target_toned, data_range=1)
+            sample_mse = mean_squared_error(fake_toned, target_toned)
+            ssim_windows = structural_similarity_index_measure(fake_toned, target_toned, reduction="none", data_range=1)
+
+            ldr_img = to_display(direct, gi, indirect, fake, self.hparams.use_global)
+            logger.add_image(f"{name}/{sample}_sample", ldr_img, self.current_epoch)
+            logger.add_image(f"{name}/{sample}_ssim", ssim_to_rgb(ssim_windows), self.current_epoch)
+
+            self.log_dict(
+                {
+                    f"{name}_sample/{sample}_ssim": stats[f"{sample}_value"],
+                    f"{name}_sample/{sample}_psnr": sample_psnr,
+                    f"{name}_sample/{sample}_mse": sample_mse,
+                },
+                on_step=False,
+                on_epoch=True,
+            )
+
+        if is_test:
+            root = Path(self.trainer.logger.log_dir)
+            save_score_histogram(root / "data.csv")
+            if not self.hparams.use_global:
+                save_score_histogram(root / "data_global.csv")
+
+    def log_batch_to_file(self, filename, batch_idx, fake, target):
+        test_folders = self.trainer.datamodule.test_dataloader().dataset.valid_folders
+        results_path = Path(self.trainer.logger.log_dir) / filename
+
+        # compute metrics
+        ssims = structural_similarity_index_measure(fake, target, reduction="none", data_range=1).mean(dim=(1, 2, 3))
+        psnrs = peak_signal_noise_ratio(fake, target, reduction="none", dim=(1, 2, 3), data_range=1)
+        mses = [mean_squared_error(fake[i], target[i]) for i in range(len(fake))]
+
+        # write header if it doesn't exist
+        if not results_path.exists():
+            with results_path.open("w") as f:
+                f.write("object,ssim,mse,psnr\n")
+
+        # get objects present for each sample in current batch
+        objects = ["buddha", "bunny", "cube", "dragon", "sphere"]
+        batch_folder_id = batch_idx * self.hparams.batch_size
+        batch_folders = test_folders[batch_folder_id : batch_folder_id + self.hparams.batch_size]
+        present = ["_".join(obj for obj in objects if obj in folder.stem) for folder in batch_folders]
+
+        # for each sample in the current batch write metrics and the objects present
+        batch = [f"{obj},{ssim},{mse},{psnr}\n" for (obj, ssim, mse, psnr) in zip(present, ssims, mses, psnrs)]
+        with results_path.open("a") as f:
+            f.writelines(batch)
